@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+pub mod device;
+
 use cpal::{
     Device, DeviceId, Host, HostId, SampleFormat, SampleRate, StreamConfig,
     host_from_id,
