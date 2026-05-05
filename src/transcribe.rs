@@ -7,6 +7,12 @@ use transcribe_rs::onnx::parakeet::ParakeetModel;
 use transcribe_rs::transcriber::{VadChunked, VadChunkedConfig};
 use transcribe_rs::vad::{EnergyVad, SmoothedVad};
 
+pub trait TranscriptWriter {
+    fn push_text(&mut self, text: &str) -> anyhow::Result<()>;
+    fn flush(&mut self) -> anyhow::Result<()>;
+    fn finish(&mut self) -> anyhow::Result<()>;
+}
+
 // Parakeet only for now, we'll see in the future.
 pub fn chunked_transcriber() -> anyhow::Result<VadChunked> {
     let options = TranscribeOptions::default();

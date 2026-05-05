@@ -6,6 +6,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 mod audio;
 mod commands;
+mod output;
 mod transcribe;
 
 #[derive(Parser)]
@@ -30,6 +31,9 @@ enum Commands {
     Enumerate {
         #[arg(short, long)]
         debug: bool,
+        // /// Model name to check the required audio configs.
+        // #[arg(long)]
+        // model: Option<String>
     },
 }
 

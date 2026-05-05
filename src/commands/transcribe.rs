@@ -1,11 +1,10 @@
-use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::{io, thread};
+use std::thread;
 use std::{sync::mpsc, thread::sleep, time::Duration};
 
-use crate::audio;
-use crate::transcribe;
+use crate::transcribe::{self, TranscriptWriter};
+use crate::{audio, output};
 
 use anyhow::Result;
 use cpal::{
@@ -54,8 +53,9 @@ pub(crate) fn run(
     debug!("Stream is setup.");
 
     debug!("Spawning model thread.");
+    let stdout = output::IoWriter::stdout();
     let transcribe_thread = thread::spawn(move || {
-        transcribe_worker(model, chunked, rx);
+        transcribe_worker(model, chunked, stdout, rx);
     });
 
     stream.play()?;
@@ -74,10 +74,10 @@ pub(crate) fn run(
 fn transcribe_worker(
     mut model: ParakeetModel,
     mut chunked: VadChunked,
+    mut writer: impl TranscriptWriter,
     rx: mpsc::Receiver<Vec<f32>>,
 ) {
     let mut skip_segments = 0;
-    let mut stdout = io::stdout();
 
     while let Ok(samples) = rx.recv() {
         let results = match chunked.feed(&mut model, &samples) {
@@ -89,21 +89,22 @@ fn transcribe_worker(
         };
 
         for result in results {
-            print!("{} ", result.text);
+            _ = writer.push_text(&result.text);
+            _ = writer.push_text(" ");
 
             if let Some(segments) = result.segments {
                 skip_segments += segments.len();
             }
         }
 
-        _ = stdout.flush();
+        _ = writer.flush()
     }
 
     match chunked.finish(&mut model) {
         Ok(finished) => {
             if let Some(segments) = finished.segments {
                 for segment in segments.iter().skip(skip_segments) {
-                    print!("{}", segment.text);
+                    _ = writer.push_text(&segment.text);
                 }
             }
         }
@@ -112,5 +113,6 @@ fn transcribe_worker(
         }
     }
 
-    println!();
+    _ = writer.push_text("\n");
+    _ = writer.finish();
 }
