@@ -1,29 +1,256 @@
+use std::error::Error;
 use std::path::PathBuf;
+use std::time::Duration;
 
-use anyhow::Context;
-use transcribe_rs::TranscribeOptions;
+use thiserror::Error;
 use transcribe_rs::onnx::Quantization;
 use transcribe_rs::onnx::parakeet::ParakeetModel;
-use transcribe_rs::transcriber::{VadChunked, VadChunkedConfig};
-use transcribe_rs::vad::{EnergyVad, SmoothedVad};
+use transcribe_rs::transcriber::{Transcriber, VadChunked, VadChunkedConfig};
+use transcribe_rs::vad;
+use transcribe_rs::{SpeechModel, TranscribeError, TranscribeOptions};
+
+use super::audio::AudioConsumer;
+
+// TODO: Move to per model? Currently, all of them are 16k.
+const SAMPLES_PER_SECOND: f32 = 16_000.0;
+const FRAME_SIZE: usize = 480; // 30 ms at 16k
 
 pub trait TranscriptWriter {
-    fn push_text(&mut self, text: &str) -> anyhow::Result<()>;
-    fn flush(&mut self) -> anyhow::Result<()>;
-    fn finish(&mut self) -> anyhow::Result<()>;
+    type Error: Error + Sync + Send + 'static;
+
+    fn push_text(&mut self, text: &str) -> Result<(), Self::Error>;
+    fn flush(&mut self) -> Result<(), Self::Error>;
+    fn finish(&mut self) -> Result<(), Self::Error>;
 }
 
-// Parakeet only for now, we'll see in the future.
-pub fn chunked_transcriber() -> anyhow::Result<VadChunked> {
-    let options = TranscribeOptions::default();
-    let envad = Box::new(EnergyVad::new(480, 0.01));
-    let vad = Box::new(SmoothedVad::new(envad, 15, 15, 2));
-
-    Ok(VadChunked::new(vad, VadChunkedConfig::default(), options))
+#[derive(Debug, Error)]
+pub enum AudioTranscriberError {
+    #[error("Failed to feed samples to the model: {0}")]
+    FeedFailed(#[from] TranscribeError),
 }
 
-// Parakeet for now, we'll see in the future.
-pub fn setup_model() -> anyhow::Result<ParakeetModel> {
-    ParakeetModel::load(&PathBuf::from("models/parakeet"), &Quantization::Int8)
-        .with_context(|| "Failed to load parakeet model at models/parakeet")
+pub struct AudioTranscriber<W: TranscriptWriter> {
+    model: Box<dyn SpeechModel>,
+    writer: W,
+    chunked: VadChunked,
+    skip_segments: usize,
+}
+
+impl<W> AudioTranscriber<W>
+where
+    W: TranscriptWriter,
+{
+    fn new(
+        model: Box<dyn SpeechModel>,
+        writer: W,
+        chunked: VadChunked,
+    ) -> Self {
+        Self {
+            model,
+            writer,
+            chunked,
+
+            skip_segments: 0,
+        }
+    }
+}
+
+impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
+    type Error = AudioTranscriberError;
+
+    fn push_chunk(
+        &mut self,
+        samples: &[f32],
+    ) -> Result<(), AudioTranscriberError> {
+        let model = self.model.as_mut();
+        let chunked = &mut self.chunked;
+        let writer = &mut self.writer;
+
+        let results = chunked.feed(model, samples)?;
+
+        // TODO: Error handling
+        for result in results {
+            _ = writer.push_text(&result.text);
+            _ = writer.push_text(" ");
+
+            if let Some(segments) = result.segments {
+                self.skip_segments += segments.len();
+            }
+        }
+
+        _ = writer.flush();
+
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<(), AudioTranscriberError> {
+        let model = self.model.as_mut();
+        let chunked = &mut self.chunked;
+        let writer = &mut self.writer;
+        let skipped = self.skip_segments;
+
+        // TODO: Error handling
+        match chunked.finish(model) {
+            Ok(finished) => {
+                if let Some(segments) = finished.segments {
+                    for segment in segments.iter().skip(skipped) {
+                        _ = writer.push_text(&segment.text);
+                    }
+                }
+            }
+            Err(err) => {
+                tracing::error!("Failed to finish the transcription: {}.", err);
+            }
+        }
+
+        _ = writer.push_text("\n");
+        _ = writer.finish();
+
+        Ok(())
+    }
+}
+
+pub enum ModelKind {
+    Parakeet,
+}
+
+pub struct ModelConfig {
+    kind: ModelKind,
+    path: PathBuf,
+}
+
+impl Default for ModelConfig {
+    fn default() -> Self {
+        Self {
+            kind: ModelKind::Parakeet,
+            path: PathBuf::from("models/parakeet"),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum BuilderError {
+    #[error("Invalid threshold {0}, it should be in range from 0.0 to 1.0")]
+    InvalidThreshold(f32),
+
+    #[error("Invalid speech end delay {0:?}, it must be within 150..=1800 ms")]
+    InvalidSpeechEndDelay(Duration),
+
+    #[error("Could not load model: {0}")]
+    FailedToLoad(#[from] TranscribeError),
+}
+
+pub struct AudioTranscriberBuilder {
+    language: Option<String>,
+    model: ModelConfig,
+
+    mic_threshold: f32,
+    speech_end_delay: Duration,
+}
+
+impl Default for AudioTranscriberBuilder {
+    fn default() -> Self {
+        Self {
+            language: None,
+
+            mic_threshold: 0.01,
+            speech_end_delay: Duration::from_millis(750),
+
+            model: Default::default(),
+        }
+    }
+}
+
+impl AudioTranscriberBuilder {
+    pub fn with_language(mut self, lang: String) -> Self {
+        self.language = Some(lang);
+        self
+    }
+
+    pub fn try_with_mic_threshold(
+        mut self,
+        threshold: f32,
+    ) -> Result<Self, BuilderError> {
+        if !(0.0..=1.0).contains(&threshold) {
+            return Err(BuilderError::InvalidThreshold(threshold));
+        }
+
+        self.mic_threshold = threshold;
+        Ok(self)
+    }
+
+    pub fn try_with_speech_end_delay(
+        mut self,
+        delay: Duration,
+    ) -> Result<Self, BuilderError> {
+        if !(Duration::from_millis(150)..=Duration::from_millis(1800))
+            .contains(&delay)
+        {
+            return Err(BuilderError::InvalidSpeechEndDelay(delay));
+        }
+
+        self.speech_end_delay = delay;
+        Ok(self)
+    }
+
+    pub fn with_model(mut self, model: ModelConfig) -> Self {
+        self.model = model;
+        self
+    }
+
+    fn setup_model(&self) -> Result<Box<dyn SpeechModel>, BuilderError> {
+        match self.model.kind {
+            ModelKind::Parakeet => {
+                let quantization = Quantization::Int8;
+                let model =
+                    ParakeetModel::load(&self.model.path, &quantization)?;
+
+                Ok(Box::new(model))
+            }
+        }
+    }
+
+    fn setup_chunked(&self) -> VadChunked {
+        let options = TranscribeOptions {
+            language: self.language.clone(),
+            ..Default::default()
+        };
+
+        let envad =
+            Box::new(vad::EnergyVad::new(FRAME_SIZE, self.mic_threshold));
+
+        // Min = 5 * 30ms = 150ms (5 * 480)
+        // Max = 60 * 30ms = 1800ms, 1.8s
+        let hangover_samples = samples_for_duration(self.speech_end_delay);
+        let hangover_frames =
+            hangover_samples.div_ceil(FRAME_SIZE).clamp(5, 60);
+
+        // prefill = 20 * 30ms = 600ms
+        let smooth_vad =
+            Box::new(vad::SmoothedVad::new(envad, 20, hangover_frames, 2));
+
+        let vad_chunked_config = VadChunkedConfig {
+            min_chunk_secs: 1.0,
+            max_chunk_secs: 45.0,
+            padding_secs: 0.35,
+            smart_split_search_secs: Some(2.0),
+            merge_separator: " ".into(),
+        };
+
+        VadChunked::new(smooth_vad, vad_chunked_config, options)
+    }
+
+    pub fn build<W: TranscriptWriter>(
+        self,
+        writer: W,
+    ) -> Result<AudioTranscriber<W>, BuilderError> {
+        let chunked = self.setup_chunked();
+        let model = self.setup_model()?;
+
+        Ok(AudioTranscriber::new(model, writer, chunked))
+    }
+}
+
+fn samples_for_duration(dur: Duration) -> usize {
+    ((dur.as_secs_f32() * SAMPLES_PER_SECOND).ceil() as usize).max(1)
 }

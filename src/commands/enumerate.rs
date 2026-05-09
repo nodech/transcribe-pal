@@ -1,7 +1,7 @@
-use crate::audio::device;
+use crate::audio::device_list;
 
 pub(crate) fn run(debug: bool) -> Result<(), anyhow::Error> {
-    let hosts = device::list_hosts();
+    let hosts = device_list::list_hosts();
 
     for host in hosts {
         println!("{}", host.summary());

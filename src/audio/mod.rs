@@ -1,6 +1,8 @@
+use std::error::Error;
 use std::str::FromStr;
 
-pub mod device;
+pub mod device_cb;
+pub mod device_list;
 
 use cpal::{
     Device, DeviceId, Host, HostId, SampleFormat, SampleRate, StreamConfig,
@@ -9,6 +11,17 @@ use cpal::{
 };
 
 use anyhow::{Context, Result, anyhow};
+
+pub trait AudioConsumer {
+    type Error: Error + Send + Sync + 'static;
+
+    fn push_chunk(&mut self, samples: &[f32]) -> Result<(), Self::Error>;
+    fn finish(&mut self) -> Result<(), Self::Error>;
+}
+
+pub trait AudioCallbackConsumer {
+    fn try_push_chunk(&mut self, samples: &[f32]) -> anyhow::Result<()>;
+}
 
 pub fn select_host(host_str: Option<String>) -> Result<Host> {
     if let Some(name) = host_str {
