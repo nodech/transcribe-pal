@@ -5,6 +5,8 @@ use cpal::{
 use std::fmt;
 use thiserror::Error;
 
+use crate::audio::AudioDeviceConfig;
+
 #[derive(Debug, Default)]
 pub struct HostSummary {
     pub name: String,
@@ -270,15 +272,24 @@ fn device_supports_config(device: &Device) -> bool {
         return false;
     };
 
-    configs.any(|cfg| is_config_supported(&cfg))
+    configs.any(|cfg| {
+        is_config_supported(
+            &cfg,
+            &AudioDeviceConfig {
+                channels: 1,
+                format: SampleFormat::F32,
+                sample_rate: 16_000,
+            },
+        )
+    })
 }
 
-// Maybe move these numbers to the models and just create
-// translator Model::Requirements -> CheckSupportedConfig and tie that
-// into this.
-pub fn is_config_supported(config: &SupportedStreamConfigRange) -> bool {
-    config.sample_format() == SampleFormat::F32
-        && config.min_sample_rate() <= 16_000
-        && config.max_sample_rate() >= 16_000
-        && config.channels() == 1
+pub fn is_config_supported(
+    config: &SupportedStreamConfigRange,
+    cmp_to: &AudioDeviceConfig,
+) -> bool {
+    config.sample_format() == cmp_to.format
+        && config.min_sample_rate() <= cmp_to.sample_rate
+        && config.max_sample_rate() >= cmp_to.sample_rate
+        && config.channels() == cmp_to.channels
 }
