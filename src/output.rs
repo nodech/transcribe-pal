@@ -45,6 +45,7 @@ impl IoWriter<Stdout> {
     }
 }
 
+#[allow(dead_code)]
 impl IoWriter<Stderr> {
     pub fn stderr() -> Self {
         Self::new(std::io::stderr())

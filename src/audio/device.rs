@@ -33,6 +33,7 @@ impl AudioStream {
         self.inner.play().map_err(Into::into)
     }
 
+    #[allow(dead_code)]
     pub fn pause(&mut self) -> Result<(), AudioDeviceError> {
         self.inner.pause().map_err(Into::into)
     }
@@ -40,6 +41,7 @@ impl AudioStream {
 
 pub struct AudioDevice {
     device: Device,
+    #[allow(dead_code)]
     host: Host,
     config: StreamConfig,
     timeout: Option<Duration>,

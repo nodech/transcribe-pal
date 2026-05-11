@@ -1,5 +1,3 @@
-use std::sync::{Arc, atomic::AtomicBool};
-
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{EnvFilter, fmt};
