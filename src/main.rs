@@ -42,16 +42,10 @@ fn main() -> Result<(), anyhow::Error> {
 
     let cli = Cli::parse();
     let command = cli.command.expect("Command must exist.");
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let shutdown_ctrlc = shutdown.clone();
-
-    ctrlc::set_handler(move || {
-        shutdown_ctrlc.store(true, std::sync::atomic::Ordering::SeqCst);
-    })?;
 
     match command {
         Commands::Transcribe { host, device } => {
-            commands::transcribe::run(shutdown.clone(), host, device)
+            commands::transcribe::run(host, device)
                 .with_context(|| "Failed to transcribe.")?
         }
         Commands::Enumerate { debug } => commands::enumerate::run(debug)
