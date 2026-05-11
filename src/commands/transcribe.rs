@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::{thread::sleep, time::Duration};
@@ -17,8 +18,10 @@ pub(crate) fn run(
     let transcriber =
         transcribe::AudioTranscriberBuilder::default().build(multi)?;
 
-    let mut mpsc_adapter =
-        audio::device_cb::MPSCAudioAdapter::new(transcriber, 100);
+    let mut mpsc_adapter = audio::device_cb::MPSCAudioAdapter::new(
+        transcriber,
+        NonZeroUsize::try_from(100)?,
+    );
 
     let mut device = AudioDeviceBuilder::new()
         .with_host(host_str)

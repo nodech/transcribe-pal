@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::num::NonZeroUsize;
 use std::sync::mpsc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -36,11 +37,11 @@ pub struct MPSCAudioCallback {
 }
 
 impl<W: AudioConsumer + Send + 'static> MPSCAudioAdapter<W> {
-    pub fn new(consumer: W, item_buffer: usize) -> Self {
+    pub fn new(consumer: W, item_buffer: NonZeroUsize) -> Self {
         Self {
             handle: None,
             consumer: Some(consumer),
-            items: item_buffer,
+            items: item_buffer.into(),
         }
     }
 
