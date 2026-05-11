@@ -24,9 +24,12 @@ pub trait TranscriptWriter {
 }
 
 #[derive(Debug, Error)]
-pub enum AudioTranscriberError {
+pub enum AudioTranscriberError<WE: Error + Sync + Send + 'static> {
     #[error("Failed to feed samples to the model: {0}")]
     FeedFailed(#[from] TranscribeError),
+
+    #[error("Writer failed: {0}")]
+    WriterFailed(WE),
 }
 
 pub struct AudioTranscriber<W: TranscriptWriter> {
@@ -56,55 +59,57 @@ where
 }
 
 impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
-    type Error = AudioTranscriberError;
+    type Error = AudioTranscriberError<W::Error>;
 
-    fn push_chunk(
-        &mut self,
-        samples: &[f32],
-    ) -> Result<(), AudioTranscriberError> {
+    fn push_chunk(&mut self, samples: &[f32]) -> Result<(), Self::Error> {
         let model = self.model.as_mut();
         let chunked = &mut self.chunked;
         let writer = &mut self.writer;
 
         let results = chunked.feed(model, samples)?;
 
-        // TODO: Error handling
         for result in results {
-            _ = writer.push_text(&result.text);
-            _ = writer.push_text(" ");
+            writer
+                .push_text(&result.text)
+                .map_err(AudioTranscriberError::WriterFailed)?;
+            writer
+                .push_text(" ")
+                .map_err(AudioTranscriberError::WriterFailed)?;
 
             if let Some(segments) = result.segments {
                 self.skip_segments += segments.len();
             }
         }
 
-        _ = writer.flush();
+        writer
+            .flush()
+            .map_err(AudioTranscriberError::WriterFailed)?;
 
         Ok(())
     }
 
-    fn finish(&mut self) -> Result<(), AudioTranscriberError> {
+    fn finish(&mut self) -> Result<(), Self::Error> {
         let model = self.model.as_mut();
         let chunked = &mut self.chunked;
         let writer = &mut self.writer;
         let skipped = self.skip_segments;
 
-        // TODO: Error handling
-        match chunked.finish(model) {
-            Ok(finished) => {
-                if let Some(segments) = finished.segments {
-                    for segment in segments.iter().skip(skipped) {
-                        _ = writer.push_text(&segment.text);
-                    }
-                }
-            }
-            Err(err) => {
-                tracing::error!("Failed to finish the transcription: {}.", err);
+        let finished = chunked.finish(model)?;
+
+        if let Some(segments) = finished.segments {
+            for segment in segments.iter().skip(skipped) {
+                writer
+                    .push_text(&segment.text)
+                    .map_err(AudioTranscriberError::WriterFailed)?;
             }
         }
 
-        _ = writer.push_text("\n");
-        _ = writer.finish();
+        writer
+            .push_text("\n")
+            .map_err(AudioTranscriberError::WriterFailed)?;
+        writer
+            .finish()
+            .map_err(AudioTranscriberError::WriterFailed)?;
 
         Ok(())
     }

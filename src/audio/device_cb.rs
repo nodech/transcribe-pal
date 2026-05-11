@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use std::error::Error as StdError;
 use std::sync::mpsc;
 use std::thread;
@@ -92,10 +91,7 @@ impl<W: AudioConsumer + Send + 'static> MPSCAudioAdapter<W> {
 
 impl AudioCallbackConsumer for MPSCAudioCallback {
     fn try_push_chunk(&mut self, samples: &[f32]) -> anyhow::Result<()> {
-        if let Err(e) = self.tx.try_send(samples.to_vec()) {
-            return Err(anyhow!("FAILED TO SEND DATA, DROPPING. {}", e));
-        }
-
+        self.tx.try_send(samples.to_vec())?;
         Ok(())
     }
 }
