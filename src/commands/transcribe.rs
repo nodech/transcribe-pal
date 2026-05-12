@@ -3,15 +3,29 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::{thread::sleep, time::Duration};
 
+use clap::Args;
+
 use crate::audio::device::AudioDeviceBuilder;
 use crate::output::MultiWriter;
 use crate::transcribe;
 use crate::{audio, output};
 
-pub(crate) fn run(
-    host_str: Option<String>,
-    device_str: Option<String>,
-) -> anyhow::Result<()> {
+#[derive(Debug, Args)]
+pub struct TranscribeCommandArgs {
+    /// Audio host on the system
+    #[arg(long)]
+    host: Option<String>,
+    /// Audio device on the host
+    #[arg(long)]
+    device: Option<String>,
+}
+
+pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
+    let TranscribeCommandArgs {
+        host: host_str,
+        device: device_str,
+    } = cmd_args;
+
     let stdout = output::IoWriter::stdout();
     let multi = MultiWriter::new().push_writer(stdout);
 

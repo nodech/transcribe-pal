@@ -1,6 +1,15 @@
+use clap::Args;
+
 use crate::audio::device_list;
 
-pub(crate) fn run(debug: bool) -> Result<(), anyhow::Error> {
+#[derive(Debug, Args)]
+pub(crate) struct EnumerateCommandArgs {
+    #[arg(short, long)]
+    debug: bool,
+}
+
+pub(crate) fn run(cmd_args: EnumerateCommandArgs) -> Result<(), anyhow::Error> {
+    let EnumerateCommandArgs { debug } = cmd_args;
     let hosts = device_list::list_hosts();
 
     for host in hosts {

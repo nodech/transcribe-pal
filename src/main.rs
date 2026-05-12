@@ -17,22 +17,10 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     /// Transcribe system audio to text
-    Transcribe {
-        /// Audio host on the system
-        #[arg(long)]
-        host: Option<String>,
-        /// Audio device on the host
-        #[arg(long)]
-        device: Option<String>,
-    },
+    Transcribe(commands::transcribe::TranscribeCommandArgs),
+
     /// List all available hosts and devices on the system
-    Enumerate {
-        #[arg(short, long)]
-        debug: bool,
-        // /// Model name to check the required audio configs.
-        // #[arg(long)]
-        // model: Option<String>
-    },
+    Enumerate(commands::enumerate::EnumerateCommandArgs),
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -42,11 +30,11 @@ fn main() -> Result<(), anyhow::Error> {
     let command = cli.command.expect("Command must exist.");
 
     match command {
-        Commands::Transcribe { host, device } => {
-            commands::transcribe::run(host, device)
+        Commands::Transcribe(cmd_args) => {
+            commands::transcribe::run(cmd_args)
                 .with_context(|| "Failed to transcribe.")?
         }
-        Commands::Enumerate { debug } => commands::enumerate::run(debug)
+        Commands::Enumerate(cmd_args) => commands::enumerate::run(cmd_args)
             .with_context(|| "Failed to enumerate.")?,
     };
 
