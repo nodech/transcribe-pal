@@ -133,6 +133,24 @@ impl Default for ModelConfig {
     }
 }
 
+impl ModelConfig {
+    pub fn with_path_opt(mut self, path: Option<impl Into<PathBuf>>) -> Self {
+        if let Some(path) = path {
+            self.path = path.into();
+        }
+
+        self
+    }
+
+    pub fn with_kind_opt(mut self, kind: Option<impl Into<ModelKind>>) -> Self {
+        if let Some(kind) = kind {
+            self.kind = kind.into();
+        }
+
+        self
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum BuilderError {
     #[error("Invalid threshold {0}, it should be in range from 0.0 to 1.0")]
@@ -167,6 +185,7 @@ impl Default for AudioTranscriberBuilder {
 }
 
 impl AudioTranscriberBuilder {
+    #[allow(dead_code)]
     pub fn with_language(mut self, lang: String) -> Self {
         self.language = Some(lang);
         self
@@ -184,6 +203,17 @@ impl AudioTranscriberBuilder {
         Ok(self)
     }
 
+    pub fn try_with_mic_threshold_opt(
+        self,
+        threshold: Option<f32>,
+    ) -> Result<Self, BuilderError> {
+        if let Some(threshold) = threshold {
+            return self.try_with_mic_threshold(threshold);
+        }
+
+        Ok(self)
+    }
+
     pub fn try_with_speech_end_delay(
         mut self,
         delay: Duration,
@@ -195,6 +225,17 @@ impl AudioTranscriberBuilder {
         }
 
         self.speech_end_delay = delay;
+        Ok(self)
+    }
+
+    pub fn try_with_speech_end_delay_opt(
+        self,
+        delay: Option<Duration>,
+    ) -> Result<Self, BuilderError> {
+        if let Some(delay) = delay {
+            return self.try_with_speech_end_delay(delay);
+        }
+
         Ok(self)
     }
 

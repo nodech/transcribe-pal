@@ -121,11 +121,14 @@ impl MultiWriter {
         Self { writers: vec![] }
     }
 
-    pub fn push_writer<W>(mut self, writer: W) -> Self
+    pub fn push_writer<W>(&mut self, writer: W)
     where
         W: TranscriptWriter + Send + 'static,
     {
         self.writers.push(Box::new(writer));
-        self
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.writers.is_empty()
     }
 }

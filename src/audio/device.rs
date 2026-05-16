@@ -117,11 +117,6 @@ impl AudioDeviceBuilder {
         self
     }
 
-    pub fn with_config(mut self, config: AudioDeviceConfig) -> Self {
-        self.config = config;
-        self
-    }
-
     pub fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.timeout = timeout;
         self

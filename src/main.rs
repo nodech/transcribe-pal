@@ -1,4 +1,3 @@
-use anyhow::Context;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -23,20 +22,19 @@ enum Commands {
     Enumerate(commands::enumerate::EnumerateCommandArgs),
 }
 
-fn main() -> Result<(), anyhow::Error> {
+fn main() {
     fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
     let cli = Cli::parse();
     let command = cli.command.expect("Command must exist.");
 
-    match command {
-        Commands::Transcribe(cmd_args) => {
-            commands::transcribe::run(cmd_args)
-                .with_context(|| "Failed to transcribe.")?
-        }
-        Commands::Enumerate(cmd_args) => commands::enumerate::run(cmd_args)
-            .with_context(|| "Failed to enumerate.")?,
+    let cmd_result = match command {
+        Commands::Transcribe(cmd_args) => commands::transcribe::run(cmd_args),
+        Commands::Enumerate(cmd_args) => commands::enumerate::run(cmd_args),
     };
 
-    Ok(())
+    if let Err(err) = cmd_result {
+        eprintln!("error: {err}");
+        std::process::exit(1);
+    }
 }
