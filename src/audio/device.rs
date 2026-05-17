@@ -9,7 +9,7 @@ use cpal::{
 use thiserror::Error;
 
 use crate::audio::{
-    AudioCallbackConsumer, AudioDeviceConfig, device_list::is_config_supported,
+    AudioCallbackConsumer, DeviceConfig, device_list::is_config_supported,
 };
 
 #[derive(Debug, Error)]
@@ -98,7 +98,7 @@ pub enum AudioDeviceBuilderError {
 pub struct AudioDeviceBuilder {
     host_str: Option<String>,
     device_str: Option<String>,
-    config: AudioDeviceConfig,
+    config: DeviceConfig,
     timeout: Option<Duration>,
 }
 

@@ -1,11 +1,11 @@
 use cpal::{
-    Device, Host, SampleFormat, SupportedStreamConfigRange,
+    Device, Host, SupportedStreamConfigRange,
     traits::{DeviceTrait, HostTrait},
 };
 use std::fmt;
 use thiserror::Error;
 
-use crate::audio::AudioDeviceConfig;
+use crate::audio::{DeviceConfig, SampleFormat};
 
 #[derive(Debug, Default)]
 pub struct HostSummary {
@@ -275,7 +275,7 @@ fn device_supports_config(device: &Device) -> bool {
     configs.any(|cfg| {
         is_config_supported(
             &cfg,
-            &AudioDeviceConfig {
+            &DeviceConfig {
                 channels: 1,
                 format: SampleFormat::F32,
                 sample_rate: 16_000,
@@ -286,9 +286,9 @@ fn device_supports_config(device: &Device) -> bool {
 
 pub fn is_config_supported(
     config: &SupportedStreamConfigRange,
-    cmp_to: &AudioDeviceConfig,
+    cmp_to: &DeviceConfig,
 ) -> bool {
-    config.sample_format() == cmp_to.format
+    config.sample_format() == cmp_to.format.into()
         && config.min_sample_rate() <= cmp_to.sample_rate
         && config.max_sample_rate() >= cmp_to.sample_rate
         && config.channels() == cmp_to.channels

@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::ops::Mul;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -9,11 +10,7 @@ use transcribe_rs::transcriber::{Transcriber, VadChunked, VadChunkedConfig};
 use transcribe_rs::vad;
 use transcribe_rs::{SpeechModel, TranscribeError, TranscribeOptions};
 
-use super::audio::AudioConsumer;
-
-// TODO: Move to per model? Currently, all of them are 16k.
-const SAMPLES_PER_SECOND: f32 = 16_000.0;
-const FRAME_SIZE: usize = 480; // 30 ms at 16k
+use super::audio::{self, AudioConsumer};
 
 pub trait TranscriptWriter {
     type Error: Error + Sync + Send + 'static;
@@ -117,6 +114,18 @@ impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
 
 pub enum ModelKind {
     Parakeet,
+}
+
+impl ModelKind {
+    pub fn audio_config(&self) -> audio::DeviceConfig {
+        match self {
+            ModelKind::Parakeet => audio::DeviceConfig {
+                sample_rate: 16_000,
+                channels: 1,
+                format: audio::SampleFormat::F32,
+            },
+        }
+    }
 }
 
 pub struct ModelConfig {
@@ -262,14 +271,27 @@ impl AudioTranscriberBuilder {
             ..Default::default()
         };
 
+        let model_audio_cfg = self.model.kind.audio_config();
+        let frame_granular_duration = Duration::from_millis(30);
+
+        // 480 for 30 ms at 16k
+        let frame_size = frame_size_for_dur(
+            frame_granular_duration,
+            model_audio_cfg.sample_rate,
+        );
+
         let envad =
-            Box::new(vad::EnergyVad::new(FRAME_SIZE, self.mic_threshold));
+            Box::new(vad::EnergyVad::new(frame_size, self.mic_threshold));
 
         // Min = 5 * 30ms = 150ms (5 * 480)
         // Max = 60 * 30ms = 1800ms, 1.8s
-        let hangover_samples = samples_for_duration(self.speech_end_delay);
+        let hangover_samples = frame_size_for_dur(
+            self.speech_end_delay,
+            model_audio_cfg.sample_rate,
+        );
+
         let hangover_frames =
-            hangover_samples.div_ceil(FRAME_SIZE).clamp(5, 60);
+            hangover_samples.div_ceil(frame_size).clamp(5, 60);
 
         // prefill = 20 * 30ms = 600ms
         let smooth_vad =
@@ -297,6 +319,9 @@ impl AudioTranscriberBuilder {
     }
 }
 
-fn samples_for_duration(dur: Duration) -> usize {
-    ((dur.as_secs_f32() * SAMPLES_PER_SECOND).ceil() as usize).max(1)
+fn frame_size_for_dur(dur: Duration, sample_rate_hz: u32) -> usize {
+    dur.as_millis()
+        .mul(sample_rate_hz as u128)
+        .div_ceil(1000)
+        .max(1) as usize
 }
