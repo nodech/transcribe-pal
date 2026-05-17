@@ -7,9 +7,9 @@ use std::{thread::sleep, time::Duration};
 use clap::{Args, ValueEnum};
 
 use crate::audio::device::AudioDeviceBuilder;
-use crate::output::MultiWriter;
+use crate::audio::device_cb::MPSCAudioAdapter;
+use crate::output::{IoWriter, MultiWriter};
 use crate::transcribe::{self, ModelConfig};
-use crate::{audio, output};
 
 #[derive(Debug, Args)]
 pub(crate) struct TranscribeCommandArgs {
@@ -69,7 +69,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     let mut multi = MultiWriter::new();
 
     if !no_stdout {
-        multi.push_writer(output::IoWriter::stdout());
+        multi.push_writer(IoWriter::stdout());
     }
 
     if multi.is_empty() {
