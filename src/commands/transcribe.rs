@@ -86,10 +86,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         .with_model(model)
         .build(multi)?;
 
-    let mut mpsc_adapter = audio::device_cb::MPSCAudioAdapter::new(
-        transcriber,
-        NonZeroUsize::try_from(100)?,
-    );
+    let mut mpsc_adapter = MPSCAudioAdapter::new(NonZeroUsize::try_from(100)?);
 
     let mut device = AudioDeviceBuilder::new()
         .with_host(host)
@@ -97,7 +94,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         .with_timeout(Some(Duration::from_secs(1)))
         .build()?;
 
-    let audio_cb = mpsc_adapter.init()?;
+    let audio_cb = mpsc_adapter.init(transcriber)?;
     let mut stream = device.stream(audio_cb)?;
 
     stream.play()?;

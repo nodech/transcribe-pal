@@ -28,7 +28,6 @@ where
 
 pub struct MPSCAudioAdapter<W: AudioConsumer + Send + 'static> {
     handle: Option<JoinHandle<Result<W, W::Error>>>,
-    consumer: Option<W>,
     items: usize,
 }
 
@@ -37,16 +36,16 @@ pub struct MPSCAudioCallback {
 }
 
 impl<W: AudioConsumer + Send + 'static> MPSCAudioAdapter<W> {
-    pub fn new(consumer: W, item_buffer: NonZeroUsize) -> Self {
+    pub fn new(item_buffer: NonZeroUsize) -> Self {
         Self {
             handle: None,
-            consumer: Some(consumer),
             items: item_buffer.into(),
         }
     }
 
     pub fn init(
         &mut self,
+        mut consumer: W,
     ) -> Result<
         impl AudioCallbackConsumer + 'static,
         MPSCAudioCallbackError<W::Error>,
@@ -55,12 +54,9 @@ impl<W: AudioConsumer + Send + 'static> MPSCAudioAdapter<W> {
             return Err(MPSCAudioCallbackError::AlreadyInitialized);
         }
 
-        let with_consumer = self.consumer.take().unwrap();
         let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(self.items);
 
         self.handle = Some(thread::spawn(move || {
-            let mut consumer = with_consumer;
-
             while let Ok(samples) = rx.recv() {
                 consumer.push_chunk(&samples)?;
             }
@@ -72,7 +68,7 @@ impl<W: AudioConsumer + Send + 'static> MPSCAudioAdapter<W> {
         Ok(MPSCAudioCallback { tx })
     }
 
-    pub fn join(&mut self) -> Result<(), MPSCAudioCallbackError<W::Error>> {
+    pub fn join(&mut self) -> Result<W, MPSCAudioCallbackError<W::Error>> {
         if self.handle.is_none() {
             return Err(MPSCAudioCallbackError::NotRunning);
         }
@@ -83,10 +79,7 @@ impl<W: AudioConsumer + Send + 'static> MPSCAudioAdapter<W> {
             return Err(MPSCAudioCallbackError::JoinFailed);
         };
 
-        let consumer = consumer?;
-        self.consumer = Some(consumer);
-
-        Ok(())
+        consumer.map_err(Into::into)
     }
 }
 
