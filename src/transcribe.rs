@@ -151,11 +151,8 @@ impl ModelConfig {
         self
     }
 
-    pub fn with_kind_opt(mut self, kind: Option<impl Into<ModelKind>>) -> Self {
-        if let Some(kind) = kind {
-            self.kind = kind.into();
-        }
-
+    pub fn with_kind(mut self, kind: impl Into<ModelKind>) -> Self {
+        self.kind = kind.into();
         self
     }
 }

@@ -28,15 +28,14 @@ pub(crate) struct TranscribeCommandArgs {
     #[arg(long)]
     model_path: Option<PathBuf>,
 
-    /// Model type
-    #[arg(long, value_enum)]
-    model_kind: Option<CommandModelKind>,
+    #[arg(long, value_enum, default_value_t = CommandModelKind::Parakeet)]
+    model_kind: CommandModelKind,
 
     /// Microphone threshold (0.0 - 1.0)
     #[arg(long)]
     mic_threshold: Option<f32>,
 
-    /// Speech end delay (In milliseconds)
+    /// Speech end delay (In milliseconds 150 - 1800)
     #[arg(long, value_parser = clap::value_parser!(u64).range(150..=1800))]
     speech_end_delay: Option<u64>,
 }
@@ -76,14 +75,14 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("no transcript output is configured"));
     }
 
-    let model = ModelConfig::default()
-        .with_path_opt(model_path)
-        .with_kind_opt(model_kind);
-
     let transcriber = transcribe::AudioTranscriberBuilder::default()
         .try_with_mic_threshold_opt(mic_threshold)?
         .try_with_speech_end_delay_opt(speech_delay.map(Duration::from_millis))?
-        .with_model(model)
+        .with_model(
+            ModelConfig::default()
+                .with_path_opt(model_path)
+                .with_kind(model_kind),
+        )
         .build(multi)?;
 
     let mut mpsc_adapter = MPSCAudioAdapter::new(NonZeroUsize::try_from(100)?);
