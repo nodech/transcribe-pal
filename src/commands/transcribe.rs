@@ -75,14 +75,15 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("no transcript output is configured"));
     }
 
+    let model = ModelConfig::default()
+        .with_path_opt(model_path)
+        .with_kind(model_kind);
+    let model_config = model.audio_conig();
+
     let transcriber = transcribe::AudioTranscriberBuilder::default()
         .try_with_mic_threshold_opt(mic_threshold)?
         .try_with_speech_end_delay_opt(speech_delay.map(Duration::from_millis))?
-        .with_model(
-            ModelConfig::default()
-                .with_path_opt(model_path)
-                .with_kind(model_kind),
-        )
+        .with_model(model)
         .build(multi)?;
 
     let mut mpsc_adapter = MPSCAudioAdapter::new(NonZeroUsize::try_from(100)?);
@@ -92,6 +93,10 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         .with_device(device)
         .with_timeout(Some(Duration::from_secs(1)))
         .build()?;
+
+    if model_config != device.audio_config() {
+        // TODO: Rubato middleware in the pipeline.
+    }
 
     let audio_cb = mpsc_adapter.init(transcriber)?;
     let mut stream = device.stream(audio_cb)?;

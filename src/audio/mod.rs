@@ -21,6 +21,12 @@ pub enum SampleFormat {
     F32,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum SampleFormatError {
+    #[error("Unsupported sample format: {0}")]
+    Unsupported(cpal::SampleFormat),
+}
+
 impl From<SampleFormat> for cpal::SampleFormat {
     fn from(value: SampleFormat) -> Self {
         match value {
@@ -29,7 +35,18 @@ impl From<SampleFormat> for cpal::SampleFormat {
     }
 }
 
-#[derive(Debug, PartialEq)]
+impl TryFrom<cpal::SampleFormat> for SampleFormat {
+    type Error = SampleFormatError;
+
+    fn try_from(value: cpal::SampleFormat) -> Result<Self, Self::Error> {
+        Ok(match value {
+            cpal::SampleFormat::F32 => SampleFormat::F32,
+            _ => return Err(SampleFormatError::Unsupported(value)),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct DeviceConfig {
     pub format: SampleFormat,
     pub sample_rate: u32,

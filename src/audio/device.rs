@@ -2,14 +2,16 @@ use std::{str::FromStr, time::Duration};
 
 use anyhow::Result;
 use cpal::{
-    Device, DeviceId, DeviceIdError, Host, HostId, InputCallbackInfo, Stream,
-    StreamConfig, SupportedStreamConfigsError, host_from_id,
+    DefaultStreamConfigError, Device, DeviceId, DeviceIdError, Host, HostId,
+    InputCallbackInfo, Stream, StreamConfig, SupportedStreamConfigsError,
+    host_from_id,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use thiserror::Error;
 
 use crate::audio::{
-    AudioCallbackConsumer, DeviceConfig, device_list::is_config_supported,
+    AudioCallbackConsumer, DeviceConfig, SampleFormat, SampleFormatError,
+    device_list::is_config_supported,
 };
 
 #[derive(Debug, Error)]
@@ -43,17 +45,22 @@ pub struct AudioDevice {
     device: Device,
     #[allow(dead_code)]
     host: Host,
-    config: StreamConfig,
+    stream_config: StreamConfig,
+    config: DeviceConfig,
     timeout: Option<Duration>,
 }
 
 impl AudioDevice {
+    pub fn audio_config(&self) -> DeviceConfig {
+        self.config
+    }
+
     pub fn stream(
         &mut self,
         mut cb: impl AudioCallbackConsumer,
     ) -> Result<AudioStream, AudioDeviceError> {
         let stream = self.device.build_input_stream(
-            &self.config,
+            &self.stream_config,
             move |data: &[f32], _: &InputCallbackInfo| {
                 if let Err(e) = cb.try_push_chunk(data) {
                     tracing::error!("Failed to process data: {}", e);
@@ -87,11 +94,14 @@ pub enum AudioDeviceBuilderError {
     #[error("No device {device} for host {host}")]
     NoDeviceForHost { host: String, device: String },
 
-    #[error("Supported config error {0}.")]
+    #[error("Supported config error {0}")]
     SupportedConfigError(#[from] SupportedStreamConfigsError),
 
-    #[error("Supported config not found for the audio device.")]
-    FailedToFindConfig,
+    #[error("Default config error {0}")]
+    DefaultConfigError(#[from] DefaultStreamConfigError),
+
+    #[error("Unsupported format: {0}")]
+    UnsupportedFormat(#[from] SampleFormatError),
 }
 
 #[derive(Default)]
@@ -125,11 +135,12 @@ impl AudioDeviceBuilder {
     pub fn build(self) -> Result<AudioDevice, AudioDeviceBuilderError> {
         let host = self.resolve_host()?;
         let device = self.resolve_device(&host)?;
-        let config = self.resolve_config(&device)?;
+        let (stream_config, config) = self.resolve_config(&device)?;
 
         Ok(AudioDevice {
             host,
             device,
+            stream_config,
             config,
             timeout: self.timeout,
         })
@@ -186,13 +197,47 @@ impl AudioDeviceBuilder {
     fn resolve_config(
         &self,
         device: &Device,
-    ) -> Result<StreamConfig, AudioDeviceBuilderError> {
+    ) -> Result<(StreamConfig, DeviceConfig), AudioDeviceBuilderError> {
         let mut configs = device.supported_input_configs()?;
 
-        let cfg = configs
-            .find(|cfg| is_config_supported(cfg, &self.config))
-            .ok_or(AudioDeviceBuilderError::FailedToFindConfig)?;
+        Ok(
+            match configs.find(|cfg| is_config_supported(cfg, &self.config)) {
+                Some(cfg) => {
+                    let sample_format: SampleFormat =
+                        cfg.sample_format().try_into()?;
 
-        Ok(cfg.with_sample_rate(self.config.sample_rate).config())
+                    let fin_cfg =
+                        cfg.with_sample_rate(self.config.sample_rate).config();
+
+                    let sample_rate = fin_cfg.sample_rate;
+                    let channels = fin_cfg.channels;
+
+                    (
+                        fin_cfg,
+                        DeviceConfig {
+                            channels,
+                            sample_rate,
+                            format: sample_format,
+                        },
+                    )
+                }
+                None => {
+                    let def = device.default_input_config()?;
+                    let sample_format: SampleFormat =
+                        def.sample_format().try_into()?;
+                    let sample_rate = def.sample_rate();
+                    let channels = def.channels();
+
+                    (
+                        def.config(),
+                        DeviceConfig {
+                            channels,
+                            sample_rate,
+                            format: sample_format,
+                        },
+                    )
+                }
+            },
+        )
     }
 }

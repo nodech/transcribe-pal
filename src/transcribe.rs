@@ -143,6 +143,10 @@ impl Default for ModelConfig {
 }
 
 impl ModelConfig {
+    pub fn audio_conig(&self) -> audio::DeviceConfig {
+        self.kind.audio_config()
+    }
+
     pub fn with_path_opt(mut self, path: Option<impl Into<PathBuf>>) -> Self {
         if let Some(path) = path {
             self.path = path.into();
