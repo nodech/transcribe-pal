@@ -14,12 +14,6 @@ pub enum MPSCAudioCallbackError<E>
 where
     E: StdError + Send + Sync + 'static,
 {
-    #[error("Already initialized")]
-    AlreadyInitialized,
-
-    #[error("Thread is not running")]
-    NotRunning,
-
     #[error("Thread failed to join")]
     JoinFailed,
 
@@ -30,56 +24,55 @@ where
     AudioSendError(E),
 }
 
-pub struct MPSCAudioAdapter<W: AudioConsumer + Send + 'static> {
-    handle: Option<JoinHandle<Result<W, W::Error>>>,
+pub struct MPSCAudioAdapter {
     items: usize,
+}
+
+pub struct MPSCAudioAdapterHandle<W: AudioConsumer + Send + 'static> {
+    inner: JoinHandle<Result<W, W::Error>>,
 }
 
 pub struct MPSCAudioCallback {
     tx: mpsc::SyncSender<Vec<f32>>,
 }
 
-impl<W: AudioConsumer + Send + 'static> MPSCAudioAdapter<W> {
+impl MPSCAudioAdapter {
     pub fn new(item_buffer: NonZeroUsize) -> Self {
         Self {
-            handle: None,
             items: item_buffer.into(),
         }
     }
 
-    pub fn init(
-        &mut self,
+    pub fn spawn<W: AudioConsumer + Send + 'static>(
+        &self,
         mut consumer: W,
     ) -> Result<
-        impl AudioCallbackConsumer + 'static,
+        (
+            MPSCAudioAdapterHandle<W>,
+            impl AudioCallbackConsumer + 'static,
+        ),
         MPSCAudioCallbackError<W::Error>,
     > {
-        if self.handle.is_some() {
-            return Err(MPSCAudioCallbackError::AlreadyInitialized);
-        }
-
         let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(self.items);
-
-        self.handle = Some(thread::spawn(move || {
+        let handle = thread::spawn(move || {
             while let Ok(samples) = rx.recv() {
                 consumer.push_chunk(&samples)?;
             }
 
             consumer.finish()?;
             Ok(consumer)
-        }));
+        });
 
-        Ok(MPSCAudioCallback { tx })
+        Ok((
+            MPSCAudioAdapterHandle { inner: handle },
+            MPSCAudioCallback { tx },
+        ))
     }
+}
 
-    pub fn join(&mut self) -> Result<W, MPSCAudioCallbackError<W::Error>> {
-        if self.handle.is_none() {
-            return Err(MPSCAudioCallbackError::NotRunning);
-        }
-
-        let handle = self.handle.take().unwrap();
-
-        let Ok(consumer) = handle.join() else {
+impl<W: AudioConsumer + Send + 'static> MPSCAudioAdapterHandle<W> {
+    pub fn join(self) -> Result<W, MPSCAudioCallbackError<W::Error>> {
+        let Ok(consumer) = self.inner.join() else {
             return Err(MPSCAudioCallbackError::JoinFailed);
         };
 

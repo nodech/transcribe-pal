@@ -86,7 +86,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         .with_model(model)
         .build(multi)?;
 
-    let mut mpsc_adapter = MPSCAudioAdapter::new(NonZeroUsize::try_from(100)?);
+    let mpsc_adapter = MPSCAudioAdapter::new(NonZeroUsize::try_from(100)?);
 
     let mut device = AudioDeviceBuilder::new()
         .with_host(host)
@@ -98,7 +98,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         // TODO: Rubato middleware in the pipeline.
     }
 
-    let audio_cb = mpsc_adapter.init(transcriber)?;
+    let (adapter_handle, audio_cb) = mpsc_adapter.spawn(transcriber)?;
     let mut stream = device.stream(audio_cb)?;
 
     stream.play()?;
@@ -115,7 +115,8 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     }
 
     drop(stream);
-    mpsc_adapter.join()?;
+
+    adapter_handle.join()?;
 
     Ok(())
 }
