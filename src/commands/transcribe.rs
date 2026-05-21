@@ -91,11 +91,13 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     let mut device = AudioDeviceBuilder::new()
         .with_host(host)
         .with_device(device)
+        .with_config(model_config)
         .with_timeout(Some(Duration::from_secs(1)))
         .build()?;
 
     if model_config != device.audio_config() {
         // TODO: Rubato middleware in the pipeline.
+        return Err(anyhow::anyhow!("Could not select the proper config."));
     }
 
     let (adapter_handle, audio_cb) = mpsc_adapter.spawn(transcriber)?;

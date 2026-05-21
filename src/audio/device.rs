@@ -94,13 +94,13 @@ pub enum AudioDeviceBuilderError {
     #[error("No device {device} for host {host}")]
     NoDeviceForHost { host: String, device: String },
 
-    #[error("Supported config error {0}")]
+    #[error("Supported config error: {0}")]
     SupportedConfigError(#[from] SupportedStreamConfigsError),
 
-    #[error("Default config error {0}")]
+    #[error("Default config error: {0}")]
     DefaultConfigError(#[from] DefaultStreamConfigError),
 
-    #[error("Unsupported format: {0}")]
+    #[error(transparent)]
     UnsupportedFormat(#[from] SampleFormatError),
 }
 
@@ -115,6 +115,11 @@ pub struct AudioDeviceBuilder {
 impl AudioDeviceBuilder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_config(mut self, config: DeviceConfig) -> Self {
+        self.config = config;
+        self
     }
 
     pub fn with_host(mut self, host_str: Option<String>) -> Self {

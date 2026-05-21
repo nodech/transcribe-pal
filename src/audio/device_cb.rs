@@ -25,6 +25,7 @@ pub struct MPSCAudioAdapter {
     items: usize,
 }
 
+#[must_use]
 pub struct MPSCAudioAdapterHandle<W: AudioConsumer + Send + 'static> {
     inner: JoinHandle<Result<W, W::Error>>,
 }
