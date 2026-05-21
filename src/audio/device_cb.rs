@@ -10,7 +10,7 @@ use super::AudioCallbackConsumer;
 use super::AudioConsumer;
 
 #[derive(Debug, Error)]
-pub enum MPSCAudioCallbackError<E>
+pub enum MPSCAudioAdapterError<E>
 where
     E: StdError + Send + Sync + 'static,
 {
@@ -19,9 +19,6 @@ where
 
     #[error("Audio consumer failed: {0}")]
     AudioConsumerError(#[from] E),
-
-    #[error("Sending data failed: {0}")]
-    AudioSendError(E),
 }
 
 pub struct MPSCAudioAdapter {
@@ -51,7 +48,7 @@ impl MPSCAudioAdapter {
             MPSCAudioAdapterHandle<W>,
             impl AudioCallbackConsumer + 'static,
         ),
-        MPSCAudioCallbackError<W::Error>,
+        MPSCAudioAdapterError<W::Error>,
     > {
         let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(self.items);
         let handle = thread::spawn(move || {
@@ -71,22 +68,26 @@ impl MPSCAudioAdapter {
 }
 
 impl<W: AudioConsumer + Send + 'static> MPSCAudioAdapterHandle<W> {
-    pub fn join(self) -> Result<W, MPSCAudioCallbackError<W::Error>> {
+    pub fn join(self) -> Result<W, MPSCAudioAdapterError<W::Error>> {
         let Ok(consumer) = self.inner.join() else {
-            return Err(MPSCAudioCallbackError::JoinFailed);
+            return Err(MPSCAudioAdapterError::JoinFailed);
         };
 
         consumer.map_err(Into::into)
     }
 }
 
+#[derive(Debug, Error)]
+pub enum MPSCAudioCallbackError<T> {
+    #[error("Failed to send data: {0}")]
+    AudioSendError(#[from] TrySendError<T>),
+}
+
 impl AudioCallbackConsumer for MPSCAudioCallback {
-    type Error = MPSCAudioCallbackError<TrySendError<Vec<f32>>>;
+    type Error = MPSCAudioCallbackError<Vec<f32>>;
 
     fn try_push_chunk(&mut self, samples: &[f32]) -> Result<(), Self::Error> {
-        self.tx
-            .try_send(samples.to_vec())
-            .map_err(MPSCAudioCallbackError::AudioSendError)?;
+        self.tx.try_send(samples.to_vec())?;
 
         Ok(())
     }
