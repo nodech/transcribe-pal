@@ -1,6 +1,7 @@
 use std::error::Error as StdError;
 use std::num::NonZeroUsize;
 use std::sync::mpsc;
+use std::sync::mpsc::TrySendError;
 use std::thread;
 use std::thread::JoinHandle;
 use thiserror::Error;
@@ -24,6 +25,9 @@ where
 
     #[error("Audio consumer failed: {0}")]
     AudioConsumerError(#[from] E),
+
+    #[error("Sending data failed: {0}")]
+    AudioSendError(E),
 }
 
 pub struct MPSCAudioAdapter<W: AudioConsumer + Send + 'static> {
@@ -84,8 +88,13 @@ impl<W: AudioConsumer + Send + 'static> MPSCAudioAdapter<W> {
 }
 
 impl AudioCallbackConsumer for MPSCAudioCallback {
-    fn try_push_chunk(&mut self, samples: &[f32]) -> anyhow::Result<()> {
-        self.tx.try_send(samples.to_vec())?;
+    type Error = MPSCAudioCallbackError<TrySendError<Vec<f32>>>;
+
+    fn try_push_chunk(&mut self, samples: &[f32]) -> Result<(), Self::Error> {
+        self.tx
+            .try_send(samples.to_vec())
+            .map_err(MPSCAudioCallbackError::AudioSendError)?;
+
         Ok(())
     }
 }
