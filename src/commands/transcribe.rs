@@ -8,7 +8,7 @@ use clap::{Args, ValueEnum};
 
 use crate::audio::device::AudioDeviceBuilder;
 use crate::audio::device_cb::MPSCAudioAdapter;
-use crate::output::{IoWriter, MultiWriter};
+use crate::output::{IoWriter, MultiWriter, WTypeWriter};
 use crate::transcribe::{self, ModelConfig};
 
 #[derive(Debug, Args)]
@@ -23,6 +23,10 @@ pub(crate) struct TranscribeCommandArgs {
     /// Do not print to stdout
     #[arg(long)]
     no_stdout: bool,
+
+    /// Print text using wtype
+    #[arg(long)]
+    wtype: bool,
 
     /// Path to extracted model
     #[arg(long)]
@@ -59,6 +63,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         host,
         device,
         no_stdout,
+        wtype,
         model_path,
         model_kind,
         mic_threshold,
@@ -69,6 +74,10 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
 
     if !no_stdout {
         multi.push_writer(IoWriter::stdout());
+    }
+
+    if wtype {
+        multi.push_writer(WTypeWriter::new());
     }
 
     if multi.is_empty() {

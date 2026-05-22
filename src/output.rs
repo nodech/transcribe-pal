@@ -3,6 +3,7 @@ use anyhow::Result;
 use std::{
     error::Error,
     io::{Stderr, Stdout, Write},
+    process::{Command, ExitStatus, Stdio},
 };
 use thiserror::Error;
 
@@ -130,5 +131,73 @@ impl MultiWriter {
 
     pub fn is_empty(&self) -> bool {
         self.writers.is_empty()
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum WTypeWriterError {
+    #[error("Failed to launch wtype: {0}")]
+    IO(#[from] std::io::Error),
+    #[error("wtype exit status: {0}")]
+    ExitError(ExitStatus),
+}
+
+/// Write to wtype process.
+pub struct WTypeWriter {
+    buffer: String,
+}
+
+impl WTypeWriter {
+    pub fn new() -> Self {
+        Self {
+            buffer: String::new(),
+        }
+    }
+
+    fn wtype_write(&self, data: &str) -> Result<(), WTypeWriterError> {
+        let mut child = Command::new("wtype")
+            .args(["-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+
+        child
+            .stdin
+            .take()
+            .expect("Must have stdin.")
+            .write_all(data.as_bytes())?;
+
+        let status = child.wait()?;
+
+        if !status.success() {
+            return Err(WTypeWriterError::ExitError(status));
+        }
+
+        Ok(())
+    }
+}
+
+impl TranscriptWriter for WTypeWriter {
+    type Error = WTypeWriterError;
+
+    fn push_text(
+        &mut self,
+        text: &str,
+    ) -> std::result::Result<(), Self::Error> {
+        self.buffer.push_str(text);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> std::result::Result<(), Self::Error> {
+        self.wtype_write(&self.buffer)?;
+        self.buffer.clear();
+
+        Ok(())
+    }
+
+    fn finish(&mut self) -> std::result::Result<(), Self::Error> {
+        self.flush()?;
+        Ok(())
     }
 }
