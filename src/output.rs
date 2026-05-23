@@ -1,9 +1,10 @@
 use super::transcribe::TranscriptWriter;
 use anyhow::Result;
+#[cfg(feature = "wayland")]
+use std::process::{Command, ExitStatus, Stdio};
 use std::{
     error::Error,
     io::{Stderr, Stdout, Write},
-    process::{Command, ExitStatus, Stdio},
 };
 use thiserror::Error;
 
@@ -134,6 +135,7 @@ impl MultiWriter {
     }
 }
 
+#[cfg(feature = "wayland")]
 #[derive(Debug, Error)]
 pub enum WTypeWriterError {
     #[error("Failed to launch wtype: {0}")]
@@ -143,10 +145,12 @@ pub enum WTypeWriterError {
 }
 
 /// Write to wtype process.
+#[cfg(feature = "wayland")]
 pub struct WTypeWriter {
     buffer: String,
 }
 
+#[cfg(feature = "wayland")]
 impl WTypeWriter {
     pub fn new() -> Self {
         Self {
@@ -178,6 +182,7 @@ impl WTypeWriter {
     }
 }
 
+#[cfg(feature = "wayland")]
 impl TranscriptWriter for WTypeWriter {
     type Error = WTypeWriterError;
 

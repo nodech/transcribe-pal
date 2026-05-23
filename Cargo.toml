@@ -3,10 +3,16 @@ name = "transcribe-pal"
 version = "0.0.1"
 edition = "2024"
 
+[features]
+default=[]
+linux-defaults=["wayland"]
+wayland = []
+jack=["cpal/jack"]
+
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.6.1", features = ["derive"] }
-cpal = { version = "0.17.3", features = ["jack"] }
+cpal = { version = "0.17.3", features = [] }
 ctrlc = "3.5.2"
 thiserror = "2.0.18"
 tracing = "0.1.44"

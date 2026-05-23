@@ -8,7 +8,9 @@ use clap::{Args, ValueEnum};
 
 use crate::audio::device::AudioDeviceBuilder;
 use crate::audio::device_cb::MPSCAudioAdapter;
-use crate::output::{IoWriter, MultiWriter, WTypeWriter};
+#[cfg(feature = "wayland")]
+use crate::output::WTypeWriter;
+use crate::output::{IoWriter, MultiWriter};
 use crate::transcribe::{self, ModelConfig};
 
 #[derive(Debug, Args)]
@@ -24,6 +26,7 @@ pub(crate) struct TranscribeCommandArgs {
     #[arg(long)]
     no_stdout: bool,
 
+    #[cfg(feature = "wayland")]
     /// Print text using wtype
     #[arg(long)]
     wtype: bool,
@@ -63,6 +66,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         host,
         device,
         no_stdout,
+        #[cfg(feature = "wayland")]
         wtype,
         model_path,
         model_kind,
@@ -76,6 +80,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         multi.push_writer(IoWriter::stdout());
     }
 
+    #[cfg(feature = "wayland")]
     if wtype {
         multi.push_writer(WTypeWriter::new());
     }
