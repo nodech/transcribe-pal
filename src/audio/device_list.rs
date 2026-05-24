@@ -5,7 +5,7 @@ use cpal::{
 use std::fmt;
 use thiserror::Error;
 
-use crate::audio::{DeviceConfig, SampleFormat};
+use crate::audio::{ChannelCount, DeviceConfig, SampleFormat, SampleRate};
 
 #[derive(Debug, Default)]
 pub struct HostSummary {
@@ -250,9 +250,9 @@ impl fmt::Display for DeviceConfigBufferSummary {
 #[derive(Debug, Default)]
 pub struct DeviceConfigSummary {
     pub format: String,
-    pub channels: u16,
-    pub min_sample: u32,
-    pub max_sample: u32,
+    pub channels: ChannelCount,
+    pub min_sample: SampleRate,
+    pub max_sample: SampleRate,
     pub buffer: DeviceConfigBufferSummary,
 }
 

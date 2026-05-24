@@ -6,6 +6,9 @@ pub mod device;
 pub mod device_cb;
 pub mod device_list;
 
+pub type SampleRate = cpal::SampleRate;
+pub type ChannelCount = cpal::ChannelCount;
+
 pub trait AudioConsumer {
     type Error: Error + Send + Sync + 'static;
 
@@ -58,8 +61,8 @@ pub enum DeviceConfigError {
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct DeviceConfig {
     pub format: SampleFormat,
-    pub sample_rate: u32,
-    pub channels: u16,
+    pub sample_rate: SampleRate,
+    pub channels: ChannelCount,
 }
 
 impl Default for DeviceConfig {

@@ -10,7 +10,7 @@ use transcribe_rs::transcriber::{Transcriber, VadChunked, VadChunkedConfig};
 use transcribe_rs::vad;
 use transcribe_rs::{SpeechModel, TranscribeError, TranscribeOptions};
 
-use super::audio::{self, AudioConsumer};
+use super::audio::{self, AudioConsumer, SampleRate};
 
 pub trait TranscriptWriter {
     type Error: Error + Sync + Send + 'static;
@@ -320,7 +320,7 @@ impl AudioTranscriberBuilder {
     }
 }
 
-fn frame_size_for_dur(dur: Duration, sample_rate_hz: u32) -> usize {
+fn frame_size_for_dur(dur: Duration, sample_rate_hz: SampleRate) -> usize {
     dur.as_millis()
         .mul(sample_rate_hz as u128)
         .div_ceil(1000)
