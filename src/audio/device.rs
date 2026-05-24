@@ -10,7 +10,7 @@ use cpal::{
 use thiserror::Error;
 
 use crate::audio::{
-    AudioCallbackConsumer, DeviceConfig, SampleFormat, SampleFormatError,
+    AudioCallbackConsumer, DeviceConfig, DeviceConfigError, SampleFormatError,
     device_list::is_config_supported,
 };
 
@@ -102,6 +102,9 @@ pub enum AudioDeviceBuilderError {
 
     #[error(transparent)]
     UnsupportedFormat(#[from] SampleFormatError),
+
+    #[error(transparent)]
+    UnsupportedDeviceConfig(#[from] DeviceConfigError),
 }
 
 #[derive(Default)]
@@ -205,44 +208,20 @@ impl AudioDeviceBuilder {
     ) -> Result<(StreamConfig, DeviceConfig), AudioDeviceBuilderError> {
         let mut configs = device.supported_input_configs()?;
 
-        Ok(
-            match configs.find(|cfg| is_config_supported(cfg, &self.config)) {
-                Some(cfg) => {
-                    let sample_format: SampleFormat =
-                        cfg.sample_format().try_into()?;
+        if let Some(cfg) =
+            configs.find(|cfg| is_config_supported(cfg, &self.config))
+        {
+            let supported = cfg.with_sample_rate(self.config.sample_rate);
+            let device_config = DeviceConfig::try_from(&supported)?;
 
-                    let fin_cfg =
-                        cfg.with_sample_rate(self.config.sample_rate).config();
+            return Ok((supported.config(), device_config));
+        }
 
-                    let sample_rate = fin_cfg.sample_rate;
-                    let channels = fin_cfg.channels;
+        let default = device.default_input_config()?;
+        // This line also ensures format is supported.
+        // TODO: Maybe try finding next best thing here if this fails?
+        let device_config = DeviceConfig::try_from(&default)?;
 
-                    (
-                        fin_cfg,
-                        DeviceConfig {
-                            channels,
-                            sample_rate,
-                            format: sample_format,
-                        },
-                    )
-                }
-                None => {
-                    let def = device.default_input_config()?;
-                    let sample_format: SampleFormat =
-                        def.sample_format().try_into()?;
-                    let sample_rate = def.sample_rate();
-                    let channels = def.channels();
-
-                    (
-                        def.config(),
-                        DeviceConfig {
-                            channels,
-                            sample_rate,
-                            format: sample_format,
-                        },
-                    )
-                }
-            },
-        )
+        Ok((default.config(), device_config))
     }
 }

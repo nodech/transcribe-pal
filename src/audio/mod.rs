@@ -1,5 +1,7 @@
 use std::error::Error;
 
+use cpal::SupportedStreamConfig;
+
 pub mod device;
 pub mod device_cb;
 pub mod device_list;
@@ -47,6 +49,12 @@ impl TryFrom<cpal::SampleFormat> for SampleFormat {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum DeviceConfigError {
+    #[error(transparent)]
+    SampleFormatError(#[from] SampleFormatError),
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct DeviceConfig {
     pub format: SampleFormat,
@@ -61,5 +69,17 @@ impl Default for DeviceConfig {
             channels: 1,
             format: SampleFormat::F32,
         }
+    }
+}
+
+impl TryFrom<&SupportedStreamConfig> for DeviceConfig {
+    type Error = DeviceConfigError;
+
+    fn try_from(value: &SupportedStreamConfig) -> Result<Self, Self::Error> {
+        Ok(Self {
+            channels: value.channels(),
+            sample_rate: value.sample_rate(),
+            format: value.sample_format().try_into()?,
+        })
     }
 }
