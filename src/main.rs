@@ -30,7 +30,15 @@ enum Commands {
 }
 
 fn main() {
-    fmt().with_env_filter(EnvFilter::from_default_env()).init();
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("warn,transcribe_pal=info"));
+
+    fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .with_thread_ids(true)
+        .with_thread_names(true)
+        .init();
 
     let cli = Cli::parse();
     let command = cli.command.expect("Command must exist.");
