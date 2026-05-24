@@ -4,12 +4,13 @@ use tracing_subscriber::{EnvFilter, fmt};
 #[cfg(all(feature = "wayland", not(target_os = "linux")))]
 compile_error!("The `wayland` feature is only supported on Linux.");
 
-#[cfg(all(featue = "jack", not(target_os = "linux")))]
+#[cfg(all(feature = "jack", not(target_os = "linux")))]
 compile_error!("The `jack` feature is only supported on Linux.");
 
 mod audio;
 mod commands;
 mod output;
+mod resample;
 mod transcribe;
 
 #[derive(Parser)]
