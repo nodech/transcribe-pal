@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use thiserror::Error;
+use tracing::{debug, instrument, trace};
 use transcribe_rs::onnx::Quantization;
 use transcribe_rs::onnx::parakeet::ParakeetModel;
 use transcribe_rs::transcriber::{Transcriber, VadChunked, VadChunkedConfig};
@@ -58,12 +59,16 @@ where
 impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
     type Error = AudioTranscriberError<W::Error>;
 
+    #[instrument(level = "trace", name = "transcriber.push_chunk", skip_all)]
     fn push_chunk(&mut self, samples: &[f32]) -> Result<(), Self::Error> {
         let model = self.model.as_mut();
         let chunked = &mut self.chunked;
         let writer = &mut self.writer;
 
+        trace!(samples_len = samples.len(), "Feeding model samples.");
+
         let results = chunked.feed(model, samples)?;
+        trace!(text_chunks = results.len(), "Printing resulting text.");
 
         for result in results {
             writer
@@ -78,6 +83,7 @@ impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
             }
         }
 
+        trace!("Flushing text.");
         writer
             .flush()
             .map_err(AudioTranscriberError::WriterFailed)?;
@@ -85,6 +91,12 @@ impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
         Ok(())
     }
 
+    #[instrument(
+        level = "trace",
+        name = "transcriber.finish",
+        skip_all,
+        fields(skipped_segments = self.skip_segments)
+    )]
     fn finish(&mut self) -> Result<(), Self::Error> {
         let model = self.model.as_mut();
         let chunked = &mut self.chunked;
@@ -92,6 +104,8 @@ impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
         let skipped = self.skip_segments;
 
         let finished = chunked.finish(model)?;
+
+        trace!("finishing transcription");
 
         if let Some(segments) = finished.segments {
             for segment in segments.iter().skip(skipped) {
@@ -112,6 +126,7 @@ impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
     }
 }
 
+#[derive(Debug)]
 pub enum ModelKind {
     Parakeet,
 }
@@ -123,11 +138,13 @@ impl ModelKind {
                 sample_rate: 16_000,
                 channels: 1,
                 format: audio::SampleFormat::F32,
+                buffer_size: 4096,
             },
         }
     }
 }
 
+#[derive(Debug)]
 pub struct ModelConfig {
     kind: ModelKind,
     path: PathBuf,
@@ -173,6 +190,7 @@ pub enum BuilderError {
     FailedToLoad(#[from] TranscribeError),
 }
 
+#[derive(Debug)]
 pub struct AudioTranscriberBuilder {
     language: Option<String>,
     model: ModelConfig,
@@ -266,6 +284,12 @@ impl AudioTranscriberBuilder {
         }
     }
 
+    #[instrument(
+        level = "debug",
+        name = "setup_chunked",
+        skip_all,
+        fields(speech_end_delay = ?self.speech_end_delay),
+    )]
     fn setup_chunked(&self) -> VadChunked {
         let options = TranscribeOptions {
             language: self.language.clone(),
@@ -281,6 +305,14 @@ impl AudioTranscriberBuilder {
             model_audio_cfg.sample_rate,
         );
 
+        debug!(
+            audio_config = ?model_audio_cfg,
+            frame_granular_duration = ?frame_granular_duration,
+            frame_size = frame_size,
+            mic_threshold = self.mic_threshold,
+            "setting up vad chunker"
+        );
+
         let envad =
             Box::new(vad::EnergyVad::new(frame_size, self.mic_threshold));
 
@@ -294,6 +326,12 @@ impl AudioTranscriberBuilder {
         let hangover_frames =
             hangover_samples.div_ceil(frame_size).clamp(5, 60);
 
+        debug!(
+            hangover_frames = hangover_frames,
+            frame_size = frame_size,
+            "setting up smooth vad"
+        );
+
         // prefill = 20 * 30ms = 600ms
         let smooth_vad =
             Box::new(vad::SmoothedVad::new(envad, 20, hangover_frames, 2));
@@ -306,15 +344,29 @@ impl AudioTranscriberBuilder {
             merge_separator: " ".into(),
         };
 
+        debug!(
+            min_chunk_secs = vad_chunked_config.min_chunk_secs,
+            max_chunk_secs = vad_chunked_config.max_chunk_secs,
+            padding_secs = vad_chunked_config.padding_secs,
+            smart_split_search_secs =
+                vad_chunked_config.smart_split_search_secs,
+            merge_separator = vad_chunked_config.merge_separator,
+            "setting up vad chunked"
+        );
+
         VadChunked::new(smooth_vad, vad_chunked_config, options)
     }
 
+    #[instrument(level = "debug", name = "transcriber.build", skip_all)]
     pub fn build<W: TranscriptWriter>(
         self,
         writer: W,
     ) -> Result<AudioTranscriber<W>, BuilderError> {
+        debug!(opts = ?&self, "building transcriber");
         let chunked = self.setup_chunked();
+        debug!("setup chunked");
         let model = self.setup_model()?;
+        debug!("setup model");
 
         Ok(AudioTranscriber::new(model, writer, chunked))
     }

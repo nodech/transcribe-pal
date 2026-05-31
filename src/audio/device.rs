@@ -3,15 +3,15 @@ use std::{str::FromStr, time::Duration};
 use anyhow::Result;
 use cpal::{
     DefaultStreamConfigError, Device, DeviceId, DeviceIdError, Host, HostId,
-    InputCallbackInfo, Stream, StreamConfig, SupportedStreamConfigsError,
-    host_from_id,
+    InputCallbackInfo, Stream, SupportedStreamConfigsError, host_from_id,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use thiserror::Error;
+use tracing::{Span, debug, debug_span, error, trace};
 
 use crate::audio::{
-    AudioCallbackConsumer, DeviceConfig, DeviceConfigError, SampleFormatError,
-    device_list::is_config_supported,
+    AudioCallbackConsumer, DeviceConfig, DeviceConfigError, RawBufferSize,
+    SampleFormatError, device_list::is_config_supported,
 };
 
 #[derive(Debug, Error)]
@@ -45,7 +45,6 @@ pub struct AudioDevice {
     device: Device,
     #[allow(dead_code)]
     host: Host,
-    stream_config: StreamConfig,
     config: DeviceConfig,
     timeout: Option<Duration>,
 }
@@ -59,18 +58,40 @@ impl AudioDevice {
         &mut self,
         mut cb: impl AudioCallbackConsumer,
     ) -> Result<AudioStream, AudioDeviceError> {
+        let parent = Span::current();
+
+        let span = debug_span!("audio_device.stream");
+        let _guard = span.enter();
+
+        debug!(config = ?&self.config, "building audio stream");
+
+        let cb_span = tracing::debug_span!(
+            parent: parent,
+            "audio_device.audio_cb"
+        );
+
+        let channels = self.config.channels;
         let stream = self.device.build_input_stream(
-            &self.stream_config,
+            &self.config.into(),
             move |data: &[f32], _: &InputCallbackInfo| {
+                let _guard = cb_span.enter();
+                trace!(
+                    len = data.len(),
+                    channels = channels,
+                    "received audio data"
+                );
+
                 if let Err(e) = cb.try_push_chunk(data) {
-                    tracing::error!("Failed to process data: {}", e);
+                    error!(error = %e, "failed to process audio data");
                 }
             },
             |err| {
-                tracing::error!("Stream received an error: {}", err);
+                error!(error = %err, "audio stream error");
             },
             self.timeout,
         )?;
+
+        debug!("built audio stream");
 
         Ok(AudioStream { inner: stream })
     }
@@ -113,6 +134,7 @@ pub struct AudioDeviceBuilder {
     device_str: Option<String>,
     config: DeviceConfig,
     timeout: Option<Duration>,
+    buffer_size: Option<usize>,
 }
 
 impl AudioDeviceBuilder {
@@ -140,15 +162,20 @@ impl AudioDeviceBuilder {
         self
     }
 
+    /// Buffer size per channel
+    pub fn with_buffer_size(mut self, buffer_size: Option<usize>) -> Self {
+        self.buffer_size = buffer_size;
+        self
+    }
+
     pub fn build(self) -> Result<AudioDevice, AudioDeviceBuilderError> {
         let host = self.resolve_host()?;
         let device = self.resolve_device(&host)?;
-        let (stream_config, config) = self.resolve_config(&device)?;
+        let config = self.resolve_config(&device)?;
 
         Ok(AudioDevice {
             host,
             device,
-            stream_config,
             config,
             timeout: self.timeout,
         })
@@ -205,23 +232,27 @@ impl AudioDeviceBuilder {
     fn resolve_config(
         &self,
         device: &Device,
-    ) -> Result<(StreamConfig, DeviceConfig), AudioDeviceBuilderError> {
+        // buffer_size: usize,
+    ) -> Result<DeviceConfig, AudioDeviceBuilderError> {
         let mut configs = device.supported_input_configs()?;
+        let buffer_size = self.buffer_size.unwrap_or(2048) as RawBufferSize;
 
         if let Some(cfg) =
             configs.find(|cfg| is_config_supported(cfg, &self.config))
         {
             let supported = cfg.with_sample_rate(self.config.sample_rate);
-            let device_config = DeviceConfig::try_from(&supported)?;
+            let device_config =
+                DeviceConfig::try_from_stream_config(supported, buffer_size)?;
 
-            return Ok((supported.config(), device_config));
+            return Ok(device_config);
         }
 
         let default = device.default_input_config()?;
         // This line also ensures format is supported.
         // TODO: Maybe try finding next best thing here if this fails?
-        let device_config = DeviceConfig::try_from(&default)?;
+        let device_config =
+            DeviceConfig::try_from_stream_config(default, buffer_size)?;
 
-        Ok((default.config(), device_config))
+        Ok(device_config)
     }
 }

@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::{thread::sleep, time::Duration};
 
 use clap::{Args, ValueEnum};
+use tracing::{debug, instrument};
 
 use crate::audio::device::AudioDeviceBuilder;
 use crate::audio::device_cb::MPSCAudioAdapter;
@@ -61,7 +62,10 @@ impl From<CommandModelKind> for transcribe::ModelKind {
     }
 }
 
+#[instrument(level = "info", name = "transcribe", skip_all)]
 pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
+    debug!(command_args = ?cmd_args, "transcribe");
+
     let TranscribeCommandArgs {
         host,
         device,
@@ -77,11 +81,13 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     let mut multi = MultiWriter::new();
 
     if !no_stdout {
+        debug!("enabled stdout writer");
         multi.push_writer(IoWriter::stdout());
     }
 
     #[cfg(feature = "wayland")]
     if wtype {
+        debug!("enabled wtype writer");
         multi.push_writer(WTypeWriter::new());
     }
 
@@ -94,11 +100,16 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         .with_kind(model_kind);
     let model_config = model.audio_conig();
 
+    debug!(model = ?model, model_audio_config = ?model_config,
+        "model configs");
+
     let transcriber = transcribe::AudioTranscriberBuilder::default()
         .try_with_mic_threshold_opt(mic_threshold)?
         .try_with_speech_end_delay_opt(speech_delay.map(Duration::from_millis))?
         .with_model(model)
         .build(multi)?;
+
+    debug!("built transcriber");
 
     let mpsc_adapter = MPSCAudioAdapter::new(NonZeroUsize::try_from(100)?);
 
@@ -109,6 +120,8 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         .with_timeout(Some(Duration::from_secs(1)))
         .build()?;
 
+    debug!("built audio device");
+
     if model_config != device.audio_config() {
         // TODO: Rubato middleware in the pipeline.
         return Err(anyhow::anyhow!("Could not select the proper config."));
@@ -117,8 +130,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     let (adapter_handle, audio_cb) = mpsc_adapter.spawn(transcriber)?;
     let mut stream = device.stream(audio_cb)?;
 
-    stream.play()?;
-
+    debug!("setup ctrl-c handler");
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_ctrlc = shutdown.clone();
 
@@ -126,12 +138,16 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         shutdown_ctrlc.store(true, std::sync::atomic::Ordering::SeqCst);
     })?;
 
+    debug!("starting audio stream");
+    stream.play()?;
+
     while !shutdown.load(std::sync::atomic::Ordering::SeqCst) {
         sleep(Duration::from_millis(100));
     }
 
-    drop(stream);
+    debug!("done");
 
+    drop(stream);
     adapter_handle.join()?;
 
     Ok(())

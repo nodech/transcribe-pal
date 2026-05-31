@@ -8,6 +8,9 @@ use std::{
 };
 use thiserror::Error;
 
+#[cfg(feature = "wayland")]
+use tracing::{instrument, trace};
+
 #[derive(Debug, Error)]
 pub enum IoWriterError {
     #[error("IO Error: {0}")]
@@ -144,7 +147,7 @@ pub enum WTypeWriterError {
     ExitError(ExitStatus),
 }
 
-/// Write to wtype process.
+/// Write to `wtype` process.
 #[cfg(feature = "wayland")]
 pub struct WTypeWriter {
     buffer: String,
@@ -158,6 +161,7 @@ impl WTypeWriter {
         }
     }
 
+    #[instrument(level = "trace", name = "wtype_write", skip_all)]
     fn wtype_write(&self, data: &str) -> Result<(), WTypeWriterError> {
         let mut child = Command::new("wtype")
             .args(["-"])
@@ -165,6 +169,8 @@ impl WTypeWriter {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
+
+        trace!(data_len = data.len(), "spawning wtype process");
 
         child
             .stdin
@@ -180,29 +186,38 @@ impl WTypeWriter {
 
         Ok(())
     }
+
+    fn flush_buffer(&mut self) -> std::result::Result<(), WTypeWriterError> {
+        trace!(buffer_len = self.buffer.len(), "flushing wtype writer");
+        self.wtype_write(&self.buffer)?;
+        self.buffer.clear();
+        Ok(())
+    }
 }
 
 #[cfg(feature = "wayland")]
 impl TranscriptWriter for WTypeWriter {
     type Error = WTypeWriterError;
 
+    #[instrument(level = "trace", name = "wtype_writer.push_text", skip_all)]
     fn push_text(
         &mut self,
         text: &str,
     ) -> std::result::Result<(), Self::Error> {
+        trace!(text_len = text.len(), "pushing text");
         self.buffer.push_str(text);
+
         Ok(())
     }
 
+    #[instrument(level = "trace", name = "wtype_writer.flush", skip_all)]
     fn flush(&mut self) -> std::result::Result<(), Self::Error> {
-        self.wtype_write(&self.buffer)?;
-        self.buffer.clear();
-
-        Ok(())
+        self.flush_buffer()
     }
 
+    #[instrument(level = "trace", name = "wtype_writer.finish", skip_all)]
     fn finish(&mut self) -> std::result::Result<(), Self::Error> {
-        self.flush()?;
-        Ok(())
+        trace!("finish");
+        self.flush_buffer()
     }
 }

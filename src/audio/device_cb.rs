@@ -5,6 +5,7 @@ use std::sync::mpsc::TrySendError;
 use std::thread;
 use std::thread::JoinHandle;
 use thiserror::Error;
+use tracing::{info, instrument};
 
 use super::AudioCallbackConsumer;
 use super::AudioConsumer;
@@ -16,6 +17,9 @@ where
 {
     #[error("Thread failed to join")]
     JoinFailed,
+
+    #[error("IO Error: {0}")]
+    IOError(std::io::Error),
 
     #[error("Audio consumer failed: {0}")]
     AudioConsumerError(#[from] E),
@@ -41,6 +45,7 @@ impl MPSCAudioAdapter {
         }
     }
 
+    #[instrument(level = "info", name = "mpsc_adapter.spawn", skip_all)]
     pub fn spawn<W: AudioConsumer + Send + 'static>(
         &self,
         mut consumer: W,
@@ -52,14 +57,19 @@ impl MPSCAudioAdapter {
         MPSCAudioAdapterError<W::Error>,
     > {
         let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(self.items);
-        let handle = thread::spawn(move || {
-            while let Ok(samples) = rx.recv() {
-                consumer.push_chunk(&samples)?;
-            }
+        info!(items = self.items, "spawning audio chunk consumer thread");
 
-            consumer.finish()?;
-            Ok(consumer)
-        });
+        let handle = thread::Builder::new()
+            .name("transcriber_thread".into())
+            .spawn(move || {
+                while let Ok(samples) = rx.recv() {
+                    consumer.push_chunk(&samples)?;
+                }
+
+                consumer.finish()?;
+                Ok(consumer)
+            })
+            .map_err(MPSCAudioAdapterError::IOError)?;
 
         Ok((
             MPSCAudioAdapterHandle { inner: handle },
