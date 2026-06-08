@@ -25,13 +25,13 @@ pub trait AudioProcessor {
         std::any::type_name::<Self>()
     }
 
+    fn output_spec(&self) -> AudioSpec;
+
     fn process(
         &mut self,
         input: &[f32],
         output: &mut Vec<f32>,
     ) -> Result<(), PipelineError>;
-
-    fn output_spec(&self) -> AudioSpec;
 
     fn finish(&mut self) -> Result<(), PipelineError>;
 }
@@ -39,14 +39,15 @@ pub trait AudioProcessor {
 /// Audio Specification for the stage/processor
 #[derive(Debug, Clone, Copy)]
 pub struct AudioSpec {
-    format: SampleFormat,
-    sample_rate: SampleRate,
-    channels: ChannelCount,
-    frames_per_buffer: FrameCount,
+    #[allow(dead_code)]
+    pub format: SampleFormat,
+    pub sample_rate: SampleRate,
+    pub channels: ChannelCount,
+    pub frames_per_buffer: FrameCount,
 }
 
 impl AudioSpec {
-    fn samples_per_buffer(&self) -> RawBufferSize {
+    pub fn samples_per_buffer(&self) -> RawBufferSize {
         self.frames_per_buffer * (self.channels as RawBufferSize)
     }
 }
@@ -88,7 +89,7 @@ impl PipelineBuilder {
     }
 
     #[instrument(level = "debug", name = "audio_pipeline.builder", skip_all)]
-    pub fn with_stage_fn<F, S>(
+    pub fn with_stage<F, S>(
         mut self,
         init_stage: F,
     ) -> Result<Self, PipelineError>
@@ -99,21 +100,26 @@ impl PipelineBuilder {
         debug!(spec = ?self.current_spec, "adding new stage");
         let stage = init_stage(self.current_spec)?;
 
-        if let Some(stage) = stage {
-            // Recalculate new spec and max_buffer_size for each stage.
-            self.current_spec = stage.output_spec();
-            self.max_buffer_size = self
-                .max_buffer_size
-                .max(self.current_spec.samples_per_buffer());
+        match stage {
+            Some(stage) => {
+                // Recalculate new spec and max_buffer_size for each stage.
+                self.current_spec = stage.output_spec();
+                self.max_buffer_size = self
+                    .max_buffer_size
+                    .max(self.current_spec.samples_per_buffer());
 
-            debug!(
-                spec = ?self.current_spec,
-                max_buf_size = self.max_buffer_size,
-                name = stage.name(),
-                "added new stage"
-            );
+                debug!(
+                    spec = ?self.current_spec,
+                    max_buf_size = self.max_buffer_size,
+                    name = stage.name(),
+                    "added new stage"
+                );
 
-            self.stages.push(Box::new(stage));
+                self.stages.push(Box::new(stage));
+            }
+            None => {
+                debug!("skipping stage");
+            }
         }
 
         Ok(self)
