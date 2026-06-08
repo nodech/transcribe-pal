@@ -1,10 +1,11 @@
 use std::error::Error;
 
-use cpal::{BufferSize, FrameCount, StreamConfig, SupportedStreamConfig};
+use cpal::{BufferSize, StreamConfig, SupportedStreamConfig};
 
 pub mod device;
 pub mod device_cb;
 pub mod device_list;
+pub mod pipeline;
 
 pub type SampleRate = cpal::SampleRate;
 pub type ChannelCount = cpal::ChannelCount;
@@ -67,7 +68,7 @@ pub struct DeviceConfig {
     pub format: SampleFormat,
     pub sample_rate: SampleRate,
     pub channels: ChannelCount,
-    pub buffer_size: RawBufferSize,
+    pub frames_per_buffer: RawBufferSize,
 }
 
 impl Default for DeviceConfig {
@@ -76,7 +77,7 @@ impl Default for DeviceConfig {
             sample_rate: 16_000,
             channels: 1,
             format: SampleFormat::F32,
-            buffer_size: 4096,
+            frames_per_buffer: 4096,
         }
     }
 }
@@ -101,7 +102,7 @@ impl DeviceConfig {
             channels: stream_config.channels(),
             sample_rate: stream_config.sample_rate(),
             format: stream_config.sample_format().try_into()?,
-            buffer_size: buf_size,
+            frames_per_buffer: buf_size,
         })
     }
 }
@@ -111,7 +112,7 @@ impl From<DeviceConfig> for StreamConfig {
         Self {
             channels: value.channels,
             sample_rate: value.sample_rate,
-            buffer_size: BufferSize::Fixed(value.buffer_size),
+            buffer_size: BufferSize::Fixed(value.frames_per_buffer),
         }
     }
 }

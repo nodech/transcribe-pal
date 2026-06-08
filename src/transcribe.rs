@@ -138,7 +138,7 @@ impl ModelKind {
                 sample_rate: 16_000,
                 channels: 1,
                 format: audio::SampleFormat::F32,
-                buffer_size: 4096,
+                frames_per_buffer: 4096,
             },
         }
     }

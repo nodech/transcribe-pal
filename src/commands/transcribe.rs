@@ -9,6 +9,7 @@ use tracing::{debug, instrument};
 
 use crate::audio::device::AudioDeviceBuilder;
 use crate::audio::device_cb::MPSCAudioAdapter;
+use crate::audio::pipeline::{PipelineBuilder, PipelineError, RemixerAvg};
 #[cfg(feature = "wayland")]
 use crate::output::WTypeWriter;
 use crate::output::{IoWriter, MultiWriter};
@@ -117,17 +118,34 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         .with_host(host)
         .with_device(device)
         .with_config(model_config)
+        .with_buffer_size(Some(2048))
         .with_timeout(Some(Duration::from_secs(1)))
         .build()?;
 
     debug!("built audio device");
 
-    if model_config != device.audio_config() {
-        // TODO: Rubato middleware in the pipeline.
-        return Err(anyhow::anyhow!("Could not select the proper config."));
+    debug!("building audio pipeline");
+    let audio_config = device.audio_config();
+
+    if audio_config.format != model_config.format {
+        return Err(anyhow::anyhow!(
+            "unsupported format: {:?}, expected: {:?}",
+            audio_config.format,
+            model_config.format
+        ));
     }
 
-    let (adapter_handle, audio_cb) = mpsc_adapter.spawn(transcriber)?;
+    let audio_pipeline = PipelineBuilder::new(audio_config)
+        .with_stage_fn(|spec| {
+            RemixerAvg::to_channels(spec, model_config.channels)
+                .map_err(PipelineError::new)
+        })?
+        .build(transcriber);
+
+    debug!("built audio pipeline");
+
+    let (adapter_handle, audio_cb) = mpsc_adapter.spawn(audio_pipeline)?;
+
     let mut stream = device.stream(audio_cb)?;
 
     debug!("setup ctrl-c handler");
@@ -145,10 +163,11 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         sleep(Duration::from_millis(100));
     }
 
-    debug!("done");
-
     drop(stream);
+    debug!("joining adapter thread");
     adapter_handle.join()?;
+
+    debug!("done");
 
     Ok(())
 }

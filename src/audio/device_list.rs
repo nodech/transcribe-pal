@@ -279,7 +279,7 @@ fn device_supports_config(device: &Device) -> bool {
                 channels: 1,
                 format: SampleFormat::F32,
                 sample_rate: 16_000,
-                buffer_size: 4096,
+                frames_per_buffer: 4096,
             },
         )
     })
