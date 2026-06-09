@@ -13,6 +13,14 @@ use transcribe_rs::{SpeechModel, TranscribeError, TranscribeOptions};
 
 use super::audio::{self, AudioConsumer, SampleRate};
 
+const FRAME_GRANULAR_DUR_MS: u64 = 30;
+
+// Min = 5 * 30ms = 150ms (5 * 480)
+const MIN_SPEECH_END_DELAY: u64 = 150;
+
+// Max = 120 * 30ms = 3200ms, 3.2s
+const MAX_SPEECH_END_DELAY: u64 = 1800;
+
 pub trait TranscriptWriter {
     type Error: Error + Sync + Send + 'static;
 
@@ -183,7 +191,7 @@ pub enum BuilderError {
     #[error("Invalid threshold {0}, it should be in range from 0.0 to 1.0")]
     InvalidThreshold(f32),
 
-    #[error("Invalid speech end delay {0:?}, it must be within 150..=1800 ms")]
+    #[error("Invalid speech end delay {0:?}, it must be within 150..=3200 ms")]
     InvalidSpeechEndDelay(Duration),
 
     #[error("Could not load model: {0}")]
@@ -205,7 +213,7 @@ impl Default for AudioTranscriberBuilder {
             language: None,
 
             mic_threshold: 0.01,
-            speech_end_delay: Duration::from_millis(750),
+            speech_end_delay: Duration::from_millis(1000),
 
             model: Default::default(),
         }
@@ -246,7 +254,8 @@ impl AudioTranscriberBuilder {
         mut self,
         delay: Duration,
     ) -> Result<Self, BuilderError> {
-        if !(Duration::from_millis(150)..=Duration::from_millis(1800))
+        if !(Duration::from_millis(MIN_SPEECH_END_DELAY)
+            ..=Duration::from_millis(MAX_SPEECH_END_DELAY))
             .contains(&delay)
         {
             return Err(BuilderError::InvalidSpeechEndDelay(delay));
@@ -297,9 +306,10 @@ impl AudioTranscriberBuilder {
         };
 
         let model_audio_cfg = self.model.kind.audio_config();
-        let frame_granular_duration = Duration::from_millis(30);
+        let frame_granular_duration =
+            Duration::from_millis(FRAME_GRANULAR_DUR_MS);
 
-        // 480 for 30 ms at 16k
+        // e.g. 480 for 30 ms at 16k
         let frame_size = frame_size_for_dur(
             frame_granular_duration,
             model_audio_cfg.sample_rate,
@@ -317,7 +327,7 @@ impl AudioTranscriberBuilder {
             Box::new(vad::EnergyVad::new(frame_size, self.mic_threshold));
 
         // Min = 5 * 30ms = 150ms (5 * 480)
-        // Max = 60 * 30ms = 1800ms, 1.8s
+        // Max = 120 * 30ms = 3200ms, 3.2s
         let hangover_samples = frame_size_for_dur(
             self.speech_end_delay,
             model_audio_cfg.sample_rate,

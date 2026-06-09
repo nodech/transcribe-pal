@@ -1,4 +1,4 @@
-// Resample and prepare the audio input if necessary.
+//! Audio resampler for the audio pipeline.
 
 use rubato::{
     ResampleError, Resampler,
@@ -6,10 +6,8 @@ use rubato::{
 };
 use tracing::{instrument, trace};
 
-use crate::audio::{
-    RawBufferSize, SampleRate,
-    pipeline::{AudioProcessor, AudioSpec, PipelineError},
-};
+use super::super::{RawBufferSize, SampleRate};
+use super::{AudioProcessor, AudioSpec, PipelineError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ResampleProcessorError {

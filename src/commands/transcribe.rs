@@ -9,11 +9,10 @@ use tracing::{debug, instrument};
 
 use crate::audio::device::AudioDeviceBuilder;
 use crate::audio::device_cb::MPSCAudioAdapter;
-use crate::audio::pipeline::{PipelineBuilder, PipelineError, RemixerAvg};
+use crate::audio::pipeline::{PipelineBuilder, RemixerAvg, ResampleProcessor};
 #[cfg(feature = "wayland")]
 use crate::output::WTypeWriter;
 use crate::output::{IoWriter, MultiWriter};
-use crate::resample::ResampleProcessor;
 use crate::transcribe::{self, ModelConfig};
 
 #[derive(Debug, Args)]
@@ -139,11 +138,9 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     let audio_pipeline = PipelineBuilder::new(audio_config)
         .with_stage(|spec| {
             RemixerAvg::to_channels(spec, model_config.channels)
-                .map_err(PipelineError::new)
         })?
         .with_stage(|spec| {
             ResampleProcessor::to_sample_rate(spec, model_config.sample_rate)
-                .map_err(PipelineError::new)
         })?
         .build(transcriber);
 
