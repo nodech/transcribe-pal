@@ -10,6 +10,7 @@ compile_error!("The `jack` feature is only supported on Linux.");
 mod audio;
 mod commands;
 mod output;
+mod shutdown;
 mod transcribe;
 
 #[derive(Parser)]

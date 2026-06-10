@@ -1,8 +1,6 @@
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use std::{thread::sleep, time::Duration};
+use std::time::Duration;
 
 use clap::{Args, ValueEnum};
 use tracing::{debug, instrument};
@@ -13,6 +11,7 @@ use crate::audio::pipeline::{PipelineBuilder, RemixerAvg, ResampleProcessor};
 #[cfg(feature = "wayland")]
 use crate::output::WTypeWriter;
 use crate::output::{IoWriter, MultiWriter};
+use crate::shutdown::Shutdown;
 use crate::transcribe::{self, ModelConfig};
 
 #[derive(Debug, Args)]
@@ -146,24 +145,22 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
 
     debug!("built audio pipeline");
 
-    let (adapter_handle, audio_cb) = mpsc_adapter.spawn(audio_pipeline)?;
+    let shutdown = Shutdown::new();
+
+    let (adapter_handle, audio_cb) =
+        mpsc_adapter.spawn(audio_pipeline, shutdown.clone())?;
 
     let mut stream = device.stream(audio_cb)?;
 
     debug!("setup ctrl-c handler");
-    let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_ctrlc = shutdown.clone();
 
-    ctrlc::set_handler(move || {
-        shutdown_ctrlc.store(true, std::sync::atomic::Ordering::SeqCst);
-    })?;
+    ctrlc::set_handler(move || shutdown_ctrlc.request())?;
 
     debug!("starting audio stream");
     stream.play()?;
 
-    while !shutdown.load(std::sync::atomic::Ordering::SeqCst) {
-        sleep(Duration::from_millis(100));
-    }
+    shutdown.wait();
 
     drop(stream);
     debug!("joining adapter thread");

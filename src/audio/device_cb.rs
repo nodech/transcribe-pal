@@ -7,6 +7,8 @@ use std::thread::JoinHandle;
 use thiserror::Error;
 use tracing::{info, instrument};
 
+use crate::shutdown::Shutdown;
+
 use super::AudioCallbackConsumer;
 use super::AudioConsumer;
 
@@ -49,6 +51,7 @@ impl MPSCAudioAdapter {
     pub fn spawn<W: AudioConsumer + Send + 'static>(
         &self,
         mut consumer: W,
+        shutdown: Shutdown,
     ) -> Result<
         (
             MPSCAudioAdapterHandle<W>,
@@ -63,7 +66,9 @@ impl MPSCAudioAdapter {
             .name("transcriber_thread".into())
             .spawn(move || {
                 while let Ok(samples) = rx.recv() {
-                    consumer.push_chunk(&samples)?;
+                    consumer
+                        .push_chunk(&samples)
+                        .inspect_err(|_| shutdown.request())?;
                 }
 
                 consumer.finish()?;
