@@ -9,6 +9,7 @@ compile_error!("The `jack` feature is only supported on Linux.");
 
 mod audio;
 mod commands;
+mod model;
 mod output;
 mod shutdown;
 mod transcribe;
@@ -39,6 +40,12 @@ fn main() {
         .with_thread_ids(true)
         .with_thread_names(true)
         .init();
+
+    // Check manifests are correct.
+    if let Err(e) = model::load_manifests() {
+        eprintln!("error: {e}.");
+        std::process::exit(1);
+    }
 
     let cli = Cli::parse();
     let command = cli.command.expect("Command must exist.");
