@@ -21,3 +21,13 @@ pub fn load_manifests()
 
     Ok(manifests)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_manifests() {
+        load_manifests().unwrap();
+    }
+}

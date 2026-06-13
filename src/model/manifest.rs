@@ -157,7 +157,7 @@ impl<'a> LineParser<'a> {
                     });
                 }
 
-                let filename = trimmed[first_ws + 1..].trim();
+                let filename = trimmed[first_ws..].trim();
 
                 // This will not happen.
                 if filename.is_empty() {
@@ -172,5 +172,51 @@ impl<'a> LineParser<'a> {
                 })
             })
             .transpose()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_manifest() {
+        const MANIFEST: &str = "1
+model-name
+license-name
+license-url
+homepage-url
+1024
+download-url
+0000000000000000000000000000000000000001
+0000000000000000000000000000000000000000000000000000000000000002  file1
+0000000000000000000000000000000000000000000000000000000000000003  file2.onnx
+";
+        let manifest: ModelManifest = MANIFEST.parse().unwrap();
+
+        assert_eq!(manifest.version, 1);
+        assert_eq!(manifest.name, "model-name");
+        assert_eq!(manifest.license_name, "license-name");
+        assert_eq!(manifest.license_url, "license-url");
+        assert_eq!(manifest.homepage_url, "homepage-url");
+        assert_eq!(manifest.size_on_disk, 1024);
+        assert_eq!(manifest.download_url, "download-url");
+        assert_eq!(
+            manifest.download_hash,
+            "0000000000000000000000000000000000000001"
+        );
+        assert_eq!(manifest.download_files.len(), 2);
+
+        assert_eq!(manifest.download_files[0].filename, "file1");
+        assert_eq!(
+            manifest.download_files[0].hash,
+            "0000000000000000000000000000000000000000000000000000000000000002"
+        );
+
+        assert_eq!(manifest.download_files[1].filename, "file2.onnx");
+        assert_eq!(
+            manifest.download_files[1].hash,
+            "0000000000000000000000000000000000000000000000000000000000000003"
+        );
     }
 }
