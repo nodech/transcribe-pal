@@ -1,18 +1,11 @@
-use std::{num::ParseIntError, str::FromStr};
+use std::str::FromStr;
+
+use crate::model::line_parser::{LineParseError, LineParser, ParsedLine};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModelManifestParseError {
-    #[error("Expected line for \"{name}\" at line {line_no}")]
-    MissingLine { name: &'static str, line_no: usize },
-
-    #[error("Expected an integer for {name}, got: {found} at line {line_no}")]
-    ExpectedInteger {
-        name: &'static str,
-        found: String,
-        line_no: usize,
-        #[source]
-        source: ParseIntError,
-    },
+    #[error(transparent)]
+    LineParseError(#[from] LineParseError),
 
     #[error("Expected hash + filename found \"{found}\" at line {line_no}")]
     ExpectedHashAndFilename { found: String, line_no: usize },
@@ -33,9 +26,48 @@ pub struct ModelManifestFile {
     pub hash: String,
 }
 
+fn parse_download_file(
+    parser: &mut LineParser<'_>,
+) -> Result<Option<ModelManifestFile>, ModelManifestParseError> {
+    parser
+        .next()
+        .map(|ParsedLine { value, line_no }| {
+            let trimmed = value.trim();
+            let first_ws = trimmed.find(char::is_whitespace).ok_or(
+                ModelManifestParseError::ExpectedHashAndFilename {
+                    found: value.clone(),
+                    line_no,
+                },
+            )?;
+
+            let hash = trimmed[0..first_ws].trim();
+
+            if hash.len() != 64 {
+                return Err(ModelManifestParseError::ExpectedHash {
+                    found: hash.into(),
+                    line_no,
+                });
+            }
+
+            let filename = trimmed[first_ws..].trim();
+
+            // This will not happen.
+            if filename.is_empty() {
+                return Err(ModelManifestParseError::ExpectedFilename(line_no));
+            }
+
+            Ok(ModelManifestFile {
+                hash: hash.to_string(),
+                filename: filename.to_string(),
+            })
+        })
+        .transpose()
+}
+
 // TODO: Rename this to ModelManifestV1 and wrap it with enum?
 #[derive(Debug)]
 pub struct ModelManifest {
+    /// This refers to the encoding format for this struct/manifest file.
     pub version: usize,
     pub name: String,
     pub license_name: String,
@@ -70,7 +102,7 @@ impl FromStr for ModelManifest {
         let download_hash = parser.string("download_hash")?;
         let mut download_files = vec![];
 
-        while let Some(file) = parser.download_file()? {
+        while let Some(file) = parse_download_file(&mut parser)? {
             download_files.push(file);
         }
 
@@ -86,92 +118,6 @@ impl FromStr for ModelManifest {
             download_hash,
             download_files,
         })
-    }
-}
-
-struct LineParser<'a> {
-    processed: usize,
-    lines: std::str::Lines<'a>,
-}
-
-impl<'a> LineParser<'a> {
-    fn new(lines_iter: std::str::Lines<'a>) -> Self {
-        LineParser {
-            processed: 0,
-            lines: lines_iter,
-        }
-    }
-
-    fn next(&mut self) -> Option<String> {
-        self.lines.next().map(|l| {
-            self.processed += 1;
-            l.to_string()
-        })
-    }
-
-    fn string(
-        &mut self,
-        name: &'static str,
-    ) -> Result<String, ModelManifestParseError> {
-        self.next().ok_or(ModelManifestParseError::MissingLine {
-            name,
-            line_no: self.processed,
-        })
-    }
-
-    fn usize(
-        &mut self,
-        name: &'static str,
-    ) -> Result<usize, ModelManifestParseError> {
-        let line = self.string(name)?;
-
-        line.parse::<usize>().map_err(|e| {
-            ModelManifestParseError::ExpectedInteger {
-                name,
-                found: line,
-                line_no: self.processed,
-                source: e,
-            }
-        })
-    }
-
-    fn download_file(
-        &mut self,
-    ) -> Result<Option<ModelManifestFile>, ModelManifestParseError> {
-        self.next()
-            .map(|l| {
-                let trimmed = l.trim();
-                let first_ws = trimmed.find(char::is_whitespace).ok_or(
-                    ModelManifestParseError::ExpectedHashAndFilename {
-                        found: l.clone(),
-                        line_no: self.processed,
-                    },
-                )?;
-
-                let hash = trimmed[0..first_ws].trim();
-
-                if hash.len() != 64 {
-                    return Err(ModelManifestParseError::ExpectedHash {
-                        found: hash.into(),
-                        line_no: self.processed,
-                    });
-                }
-
-                let filename = trimmed[first_ws..].trim();
-
-                // This will not happen.
-                if filename.is_empty() {
-                    return Err(ModelManifestParseError::ExpectedFilename(
-                        self.processed,
-                    ));
-                }
-
-                Ok(ModelManifestFile {
-                    hash: hash.to_string(),
-                    filename: filename.to_string(),
-                })
-            })
-            .transpose()
     }
 }
 

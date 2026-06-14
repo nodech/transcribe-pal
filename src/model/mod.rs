@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+mod line_parser;
 mod manifest;
 
 #[derive(Debug, Error)]
