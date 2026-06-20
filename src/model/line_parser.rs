@@ -1,5 +1,7 @@
 use std::num::ParseIntError;
 
+use crate::model::hash::{Hash, HashSize, IncorrectHash};
+
 #[derive(Debug, thiserror::Error)]
 pub enum LineParseError {
     #[error("Expected line for \"{name}\" at line {line_no}")]
@@ -12,6 +14,15 @@ pub enum LineParseError {
         line_no: usize,
         #[source]
         source: ParseIntError,
+    },
+
+    #[error("Expected hash for {name}, got: {found} at line {line_no}")]
+    ExpectedHash {
+        name: &'static str,
+        found: String,
+        line_no: usize,
+        #[source]
+        source: IncorrectHash,
     },
 }
 
@@ -93,5 +104,33 @@ impl<'a> LineParser<'a> {
         name: &'static str,
     ) -> Result<usize, LineParseError> {
         self.usize_line(name).map(|l| l.into_value())
+    }
+
+    pub(super) fn hash_line<T: HashSize>(
+        &mut self,
+        name: &'static str,
+    ) -> Result<ParsedLine<Hash<T>>, LineParseError> {
+        let parsed = self.string_line(name)?;
+
+        parsed
+            .value
+            .parse::<Hash<T>>()
+            .map(|n| ParsedLine {
+                value: n,
+                line_no: parsed.line_no,
+            })
+            .map_err(|e| LineParseError::ExpectedHash {
+                name,
+                found: parsed.value,
+                line_no: parsed.line_no,
+                source: e,
+            })
+    }
+
+    pub(super) fn hash<T: HashSize>(
+        &mut self,
+        name: &'static str,
+    ) -> Result<Hash<T>, LineParseError> {
+        self.hash_line(name).map(|l| l.into_value())
     }
 }

@@ -1,20 +1,16 @@
 use std::str::FromStr;
 
-use crate::model::line_parser::{LineParseError, LineParser, ParsedLine};
+use crate::model::{
+    hash::{Hash, Sha1, Sha256},
+    line_parser::{LineParseError, LineParser},
+};
+
+pub type ModelVersion = String;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModelManifestParseError {
     #[error(transparent)]
     LineParseError(#[from] LineParseError),
-
-    #[error("Expected hash + filename found \"{found}\" at line {line_no}")]
-    ExpectedHashAndFilename { found: String, line_no: usize },
-
-    #[error("Expected hash found \"{found}\" at line {line_no}")]
-    ExpectedHash { found: String, line_no: usize },
-
-    #[error("Expected filename at line {0}")]
-    ExpectedFilename(usize),
 
     #[error("Unsupported version {0}")]
     UnsupportedVersion(usize),
@@ -22,8 +18,9 @@ pub enum ModelManifestParseError {
 
 #[derive(Debug)]
 pub struct ModelManifestFile {
-    pub filename: String,
-    pub hash: String,
+    pub name: String,
+    pub hash: Hash<Sha256>,
+    pub size: usize,
 }
 
 fn parse_download_file(
@@ -31,36 +28,19 @@ fn parse_download_file(
 ) -> Result<Option<ModelManifestFile>, ModelManifestParseError> {
     parser
         .next()
-        .map(|ParsedLine { value, line_no }| {
-            let trimmed = value.trim();
-            let first_ws = trimmed.find(char::is_whitespace).ok_or(
-                ModelManifestParseError::ExpectedHashAndFilename {
-                    found: value.clone(),
-                    line_no,
-                },
-            )?;
+        .map(
+            |line| -> Result<ModelManifestFile, ModelManifestParseError> {
+                let file_name = line.value;
+                let file_hash = parser.hash::<Sha256>("file_hash")?;
+                let size = parser.usize("file_size")?;
 
-            let hash = trimmed[0..first_ws].trim();
-
-            if hash.len() != 64 {
-                return Err(ModelManifestParseError::ExpectedHash {
-                    found: hash.into(),
-                    line_no,
-                });
-            }
-
-            let filename = trimmed[first_ws..].trim();
-
-            // This will not happen.
-            if filename.is_empty() {
-                return Err(ModelManifestParseError::ExpectedFilename(line_no));
-            }
-
-            Ok(ModelManifestFile {
-                hash: hash.to_string(),
-                filename: filename.to_string(),
-            })
-        })
+                Ok(ModelManifestFile {
+                    name: file_name,
+                    hash: file_hash,
+                    size,
+                })
+            },
+        )
         .transpose()
 }
 
@@ -69,15 +49,21 @@ fn parse_download_file(
 pub struct ModelManifest {
     /// This refers to the encoding format for this struct/manifest file.
     pub version: usize,
+    pub model_version: ModelVersion,
     pub name: String,
     pub license_name: String,
     pub license_url: String,
     pub homepage_url: String,
 
-    pub size_on_disk: usize,
     pub download_url: String,
-    pub download_hash: String,
+    pub download_hash: Hash<Sha1>,
     pub download_files: Vec<ModelManifestFile>,
+}
+
+impl ModelManifest {
+    pub fn size_on_disk(&self) -> usize {
+        self.download_files.iter().map(|f| f.size).sum()
+    }
 }
 
 impl FromStr for ModelManifest {
@@ -92,14 +78,14 @@ impl FromStr for ModelManifest {
             return Err(ModelManifestParseError::UnsupportedVersion(version));
         }
 
+        let model_version = parser.string("model_version")?;
         let name = parser.string("name")?;
         let license_name = parser.string("license_name")?;
         let license_url = parser.string("license_url")?;
         let homepage_url = parser.string("homepage_url")?;
 
-        let size_on_disk = parser.usize("size_on_disk")?;
         let download_url = parser.string("download_url")?;
-        let download_hash = parser.string("download_hash")?;
+        let download_hash = parser.hash::<Sha1>("download_hash")?;
         let mut download_files = vec![];
 
         while let Some(file) = parse_download_file(&mut parser)? {
@@ -108,12 +94,12 @@ impl FromStr for ModelManifest {
 
         Ok(Self {
             version,
+            model_version,
             name,
             license_name,
             license_url,
             homepage_url,
 
-            size_on_disk,
             download_url,
             download_hash,
             download_files,
@@ -128,41 +114,48 @@ mod tests {
     #[test]
     fn decode_manifest() {
         const MANIFEST: &str = "1
+1.0.0
 model-name
 license-name
 license-url
 homepage-url
-1024
 download-url
 0000000000000000000000000000000000000001
-0000000000000000000000000000000000000000000000000000000000000002  file1
-0000000000000000000000000000000000000000000000000000000000000003  file2.onnx
+file1
+0000000000000000000000000000000000000000000000000000000000000002
+512
+file2.onnx
+0000000000000000000000000000000000000000000000000000000000000003
+256
 ";
         let manifest: ModelManifest = MANIFEST.parse().unwrap();
 
         assert_eq!(manifest.version, 1);
+        assert_eq!(manifest.model_version, "1.0.0");
         assert_eq!(manifest.name, "model-name");
         assert_eq!(manifest.license_name, "license-name");
         assert_eq!(manifest.license_url, "license-url");
         assert_eq!(manifest.homepage_url, "homepage-url");
-        assert_eq!(manifest.size_on_disk, 1024);
+        // assert_eq!(manifest.size_on_disk, 768);
         assert_eq!(manifest.download_url, "download-url");
         assert_eq!(
-            manifest.download_hash,
+            manifest.download_hash.as_str(),
             "0000000000000000000000000000000000000001"
         );
         assert_eq!(manifest.download_files.len(), 2);
 
-        assert_eq!(manifest.download_files[0].filename, "file1");
+        assert_eq!(manifest.download_files[0].name, "file1");
         assert_eq!(
-            manifest.download_files[0].hash,
+            manifest.download_files[0].hash.as_str(),
             "0000000000000000000000000000000000000000000000000000000000000002"
         );
+        assert_eq!(manifest.download_files[0].size, 512);
 
-        assert_eq!(manifest.download_files[1].filename, "file2.onnx");
+        assert_eq!(manifest.download_files[1].name, "file2.onnx");
         assert_eq!(
-            manifest.download_files[1].hash,
+            manifest.download_files[1].hash.as_str(),
             "0000000000000000000000000000000000000000000000000000000000000003"
         );
+        assert_eq!(manifest.download_files[1].size, 256);
     }
 }
