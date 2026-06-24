@@ -1,8 +1,16 @@
-use std::str::FromStr;
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
-use crate::model::{
-    hash::{Hash, Sha1, Sha256},
-    line_parser::{LineParseError, LineParser},
+use crate::{
+    model::{
+        FileSize,
+        hash::{Hash, Sha1, Sha256},
+        line_parser::{LineParseError, LineParser},
+    },
+    transcribe::ModelKind,
 };
 
 pub type ModelVersion = String;
@@ -16,11 +24,24 @@ pub enum ModelManifestParseError {
     UnsupportedVersion(usize),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ManifestPath(PathBuf);
+
+impl ManifestPath {
+    pub fn as_path(&self) -> &Path {
+        &self.0
+    }
+
+    pub fn into_path_buf(self) -> PathBuf {
+        self.0
+    }
+}
+
 #[derive(Debug)]
 pub struct ModelManifestFile {
-    pub name: String,
+    pub path: ManifestPath,
     pub hash: Hash<Sha256>,
-    pub size: usize,
+    pub size: FileSize,
 }
 
 fn parse_download_file(
@@ -35,9 +56,9 @@ fn parse_download_file(
                 let size = parser.usize("file_size")?;
 
                 Ok(ModelManifestFile {
-                    name: file_name,
+                    path: ManifestPath(PathBuf::from(file_name)),
                     hash: file_hash,
-                    size,
+                    size: size as FileSize,
                 })
             },
         )
@@ -50,19 +71,19 @@ pub struct ModelManifest {
     /// This refers to the encoding format for this struct/manifest file.
     pub version: usize,
     pub model_version: ModelVersion,
-    pub name: String,
+    pub name: ModelKind,
     pub license_name: String,
-    pub license_url: String,
-    pub homepage_url: String,
+    pub license_url: url::Url,
+    pub homepage_url: url::Url,
 
-    pub download_url: String,
+    pub download_url: url::Url,
     pub download_hash: Hash<Sha1>,
-    pub download_files: Vec<ModelManifestFile>,
+    pub download_files: BTreeMap<ManifestPath, ModelManifestFile>,
 }
 
 impl ModelManifest {
-    pub fn size_on_disk(&self) -> usize {
-        self.download_files.iter().map(|f| f.size).sum()
+    pub fn size_on_disk(&self) -> u64 {
+        self.download_files.iter().map(|f| f.1.size).sum()
     }
 }
 
@@ -79,17 +100,17 @@ impl FromStr for ModelManifest {
         }
 
         let model_version = parser.string("model_version")?;
-        let name = parser.string("name")?;
+        let name = parser.model_kind("name")?;
         let license_name = parser.string("license_name")?;
-        let license_url = parser.string("license_url")?;
-        let homepage_url = parser.string("homepage_url")?;
+        let license_url = parser.url("license_url")?;
+        let homepage_url = parser.url("homepage_url")?;
 
-        let download_url = parser.string("download_url")?;
+        let download_url = parser.url("download_url")?;
         let download_hash = parser.hash::<Sha1>("download_hash")?;
-        let mut download_files = vec![];
+        let mut download_files = BTreeMap::new();
 
         while let Some(file) = parse_download_file(&mut parser)? {
-            download_files.push(file);
+            download_files.insert(file.path.clone(), file);
         }
 
         Ok(Self {
@@ -111,15 +132,19 @@ impl FromStr for ModelManifest {
 mod tests {
     use super::*;
 
+    fn path(s: &str) -> ManifestPath {
+        ManifestPath(PathBuf::from(s))
+    }
+
     #[test]
     fn decode_manifest() {
         const MANIFEST: &str = "1
 1.0.0
-model-name
+parakeet
 license-name
-license-url
-homepage-url
-download-url
+https://license-url/
+https://homepage-url/
+https://download-url/
 0000000000000000000000000000000000000001
 file1
 0000000000000000000000000000000000000000000000000000000000000002
@@ -132,30 +157,34 @@ file2.onnx
 
         assert_eq!(manifest.version, 1);
         assert_eq!(manifest.model_version, "1.0.0");
-        assert_eq!(manifest.name, "model-name");
+        assert_eq!(manifest.name, ModelKind::Parakeet);
         assert_eq!(manifest.license_name, "license-name");
-        assert_eq!(manifest.license_url, "license-url");
-        assert_eq!(manifest.homepage_url, "homepage-url");
+        assert_eq!(manifest.license_url.as_str(), "https://license-url/");
+        assert_eq!(manifest.homepage_url.as_str(), "https://homepage-url/");
         // assert_eq!(manifest.size_on_disk, 768);
-        assert_eq!(manifest.download_url, "download-url");
+        assert_eq!(manifest.download_url.as_str(), "https://download-url/");
         assert_eq!(
             manifest.download_hash.as_str(),
             "0000000000000000000000000000000000000001"
         );
         assert_eq!(manifest.download_files.len(), 2);
 
-        assert_eq!(manifest.download_files[0].name, "file1");
+        assert_eq!(manifest.download_files[&path("file1")].path, path("file1"));
+
         assert_eq!(
-            manifest.download_files[0].hash.as_str(),
+            manifest.download_files[&path("file1")].hash.as_str(),
             "0000000000000000000000000000000000000000000000000000000000000002"
         );
-        assert_eq!(manifest.download_files[0].size, 512);
+        assert_eq!(manifest.download_files[&path("file1")].size, 512);
 
-        assert_eq!(manifest.download_files[1].name, "file2.onnx");
         assert_eq!(
-            manifest.download_files[1].hash.as_str(),
+            manifest.download_files[&path("file2.onnx")].path,
+            path("file2.onnx")
+        );
+        assert_eq!(
+            manifest.download_files[&path("file2.onnx")].hash.as_str(),
             "0000000000000000000000000000000000000000000000000000000000000003"
         );
-        assert_eq!(manifest.download_files[1].size, 256);
+        assert_eq!(manifest.download_files[&path("file2.onnx")].size, 256);
     }
 }

@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::ops::Mul;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 
 use thiserror::Error;
@@ -134,7 +135,11 @@ impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("Unknown model \"{0}\"")]
+pub struct ModelKindUnknown(String);
+
+#[derive(Debug, PartialEq)]
 pub enum ModelKind {
     Parakeet,
 }
@@ -148,6 +153,29 @@ impl ModelKind {
                 format: audio::SampleFormat::F32,
                 frames_per_buffer: 4096,
             },
+        }
+    }
+
+    pub fn to_name(&self) -> &'static str {
+        match self {
+            Self::Parakeet => "parakeet",
+        }
+    }
+}
+
+impl std::fmt::Display for ModelKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.to_name())
+    }
+}
+
+impl FromStr for ModelKind {
+    type Err = ModelKindUnknown;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        match name {
+            "parakeet" => Ok(Self::Parakeet),
+            _ => Err(ModelKindUnknown(name.to_owned())),
         }
     }
 }
