@@ -1,5 +1,7 @@
 use std::{
+    borrow::Borrow,
     collections::BTreeMap,
+    fmt::Display,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -22,18 +24,41 @@ pub enum ModelManifestParseError {
 
     #[error("Unsupported version {0}")]
     UnsupportedVersion(usize),
+
+    #[error("Duplicate file entry: \"{0}\"")]
+    DuplicateFileEntry(ManifestPath),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ManifestPath(PathBuf);
+pub struct ManifestPath(String);
 
 impl ManifestPath {
     pub fn as_path(&self) -> &Path {
-        &self.0
+        Path::new(self.as_str())
     }
 
     pub fn into_path_buf(self) -> PathBuf {
-        self.0
+        PathBuf::from(&self.0)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn new(path: impl Into<String>) -> Self {
+        Self(path.into())
+    }
+}
+
+impl Display for ManifestPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Borrow<str> for ManifestPath {
+    fn borrow(&self) -> &str {
+        self.as_str()
     }
 }
 
@@ -56,7 +81,7 @@ fn parse_download_file(
                 let size = parser.usize("file_size")?;
 
                 Ok(ModelManifestFile {
-                    path: ManifestPath(PathBuf::from(file_name)),
+                    path: ManifestPath::new(file_name),
                     hash: file_hash,
                     size: size as FileSize,
                 })
@@ -83,7 +108,7 @@ pub struct ModelManifest {
 
 impl ModelManifest {
     pub fn size_on_disk(&self) -> u64 {
-        self.download_files.iter().map(|f| f.1.size).sum()
+        self.download_files.values().map(|f| f.size).sum()
     }
 }
 
@@ -110,7 +135,13 @@ impl FromStr for ModelManifest {
         let mut download_files = BTreeMap::new();
 
         while let Some(file) = parse_download_file(&mut parser)? {
-            download_files.insert(file.path.clone(), file);
+            let key = file.path.clone();
+
+            if download_files.contains_key(&key) {
+                return Err(ModelManifestParseError::DuplicateFileEntry(key));
+            }
+
+            download_files.insert(key, file);
         }
 
         Ok(Self {
@@ -131,10 +162,6 @@ impl FromStr for ModelManifest {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn path(s: &str) -> ManifestPath {
-        ManifestPath(PathBuf::from(s))
-    }
 
     #[test]
     fn decode_manifest() {
@@ -169,22 +196,22 @@ file2.onnx
         );
         assert_eq!(manifest.download_files.len(), 2);
 
-        assert_eq!(manifest.download_files[&path("file1")].path, path("file1"));
+        assert_eq!(manifest.download_files["file1"].path.as_str(), "file1");
 
         assert_eq!(
-            manifest.download_files[&path("file1")].hash.as_str(),
+            manifest.download_files["file1"].hash.as_str(),
             "0000000000000000000000000000000000000000000000000000000000000002"
         );
-        assert_eq!(manifest.download_files[&path("file1")].size, 512);
+        assert_eq!(manifest.download_files["file1"].size, 512);
 
         assert_eq!(
-            manifest.download_files[&path("file2.onnx")].path,
-            path("file2.onnx")
+            manifest.download_files["file2.onnx"].path.as_str(),
+            "file2.onnx"
         );
         assert_eq!(
-            manifest.download_files[&path("file2.onnx")].hash.as_str(),
+            manifest.download_files["file2.onnx"].hash.as_str(),
             "0000000000000000000000000000000000000000000000000000000000000003"
         );
-        assert_eq!(manifest.download_files[&path("file2.onnx")].size, 256);
+        assert_eq!(manifest.download_files["file2.onnx"].size, 256);
     }
 }
