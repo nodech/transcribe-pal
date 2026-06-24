@@ -1,14 +1,8 @@
-use std::{
-    borrow::Borrow,
-    collections::BTreeMap,
-    fmt::Display,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::{collections::BTreeMap, str::FromStr};
 
 use crate::{
     model::{
-        FileSize,
+        FilePath, FileSize,
         hash::{Hash, Sha1, Sha256},
         line_parser::{LineParseError, LineParser},
     },
@@ -26,45 +20,12 @@ pub enum ModelManifestParseError {
     UnsupportedVersion(usize),
 
     #[error("Duplicate file entry: \"{0}\"")]
-    DuplicateFileEntry(ManifestPath),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ManifestPath(String);
-
-impl ManifestPath {
-    pub fn as_path(&self) -> &Path {
-        Path::new(self.as_str())
-    }
-
-    pub fn into_path_buf(self) -> PathBuf {
-        PathBuf::from(&self.0)
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    pub fn new(path: impl Into<String>) -> Self {
-        Self(path.into())
-    }
-}
-
-impl Display for ManifestPath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl Borrow<str> for ManifestPath {
-    fn borrow(&self) -> &str {
-        self.as_str()
-    }
+    DuplicateFileEntry(FilePath),
 }
 
 #[derive(Debug)]
 pub struct ModelManifestFile {
-    pub path: ManifestPath,
+    pub path: FilePath,
     pub hash: Hash<Sha256>,
     pub size: FileSize,
 }
@@ -81,7 +42,7 @@ fn parse_download_file(
                 let size = parser.usize("file_size")?;
 
                 Ok(ModelManifestFile {
-                    path: ManifestPath::new(file_name),
+                    path: FilePath::new(file_name),
                     hash: file_hash,
                     size: size as FileSize,
                 })
@@ -103,7 +64,7 @@ pub struct ModelManifest {
 
     pub download_url: url::Url,
     pub download_hash: Hash<Sha1>,
-    pub download_files: BTreeMap<ManifestPath, ModelManifestFile>,
+    pub download_files: BTreeMap<FilePath, ModelManifestFile>,
 }
 
 impl ModelManifest {
