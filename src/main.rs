@@ -7,8 +7,12 @@ compile_error!("The `wayland` feature is only supported on Linux.");
 #[cfg(all(feature = "jack", not(target_os = "linux")))]
 compile_error!("The `jack` feature is only supported on Linux.");
 
+pub const PROJECT_NAME: &str = "transcribe-pal";
+
 mod audio;
 mod commands;
+mod format;
+mod lockfile;
 mod model;
 mod output;
 mod shutdown;
@@ -28,6 +32,9 @@ enum Commands {
 
     /// List all available hosts and devices on the system
     Enumerate(commands::enumerate::EnumerateCommandArgs),
+
+    /// Manage models
+    Model(commands::model::ModelCommandArgs),
 }
 
 fn main() {
@@ -53,6 +60,7 @@ fn main() {
     let cmd_result = match command {
         Commands::Transcribe(cmd_args) => commands::transcribe::run(cmd_args),
         Commands::Enumerate(cmd_args) => commands::enumerate::run(cmd_args),
+        Commands::Model(cmd_args) => commands::model::run(cmd_args),
     };
 
     if let Err(err) = cmd_result {

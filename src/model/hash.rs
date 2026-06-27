@@ -11,7 +11,7 @@ pub trait HashKind {
     type Hasher: Digest;
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Sha1;
 
 impl HashKind for Sha1 {
@@ -19,7 +19,7 @@ impl HashKind for Sha1 {
     const HEX_SIZE: usize = 40;
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Sha256;
 
 impl HashKind for Sha256 {
@@ -27,7 +27,7 @@ impl HashKind for Sha256 {
     const HEX_SIZE: usize = 64;
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Hash<T: HashKind> {
     inner: String,
     _size: PhantomData<T>,
@@ -54,8 +54,14 @@ impl<T: HashKind> FromStr for Hash<T> {
     }
 }
 
+impl<T: HashKind> std::fmt::Display for Hash<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.inner)
+    }
+}
+
 pub fn hash_file<H: HashKind>(file: &Path) -> std::io::Result<Hash<H>> {
-    fs::read_to_string(file).map(|c| {
+    fs::read(file).map(|c| {
         let mut hasher = H::Hasher::new();
         hasher.update(c);
 
