@@ -8,12 +8,16 @@ impl FilePath {
         Path::new(self.as_str())
     }
 
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     pub fn into_path_buf(self) -> PathBuf {
         PathBuf::from(self.0)
     }
 
-    pub fn as_str(&self) -> &str {
-        &self.0
+    pub fn to_path_buf(&self) -> PathBuf {
+        PathBuf::from(self.as_str())
     }
 
     pub fn new(path: String) -> Self {

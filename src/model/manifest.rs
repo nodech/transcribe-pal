@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, str::FromStr};
+use std::{
+    collections::BTreeMap,
+    path::{Component, Path},
+    str::FromStr,
+};
 
 use crate::{
     model::{
@@ -21,6 +25,12 @@ pub enum ModelManifestParseError {
 
     #[error("Duplicate file entry: \"{0}\"")]
     DuplicateFileEntry(FilePath),
+
+    #[error("Could not parse url: {0}")]
+    ParseUrlError(#[from] url::ParseError),
+
+    #[error("Could not modify download url, not a base")]
+    UrlCannotBeBase,
 }
 
 #[derive(Debug)]
@@ -63,6 +73,7 @@ pub struct ModelManifest {
     pub homepage_url: url::Url,
 
     pub download_url: url::Url,
+    pub resolve_url: url::Url,
     pub download_hash: Hash<Sha1>,
     pub download_files: BTreeMap<FilePath, ModelManifestFile>,
 }
@@ -70,6 +81,27 @@ pub struct ModelManifest {
 impl ModelManifest {
     pub fn size_on_disk(&self) -> u64 {
         self.download_files.values().map(|f| f.size).sum()
+    }
+
+    pub fn model_path(&self) -> &Path {
+        Path::new(self.name.to_name())
+    }
+
+    pub fn resolve_url(&self, path: &Path) -> url::Url {
+        let mut resolve = self.resolve_url.clone();
+
+        {
+            // This CAN panic, need to double-check if it will.
+            let mut url = resolve.path_segments_mut().unwrap();
+
+            for component in path.components() {
+                if let Component::Normal(part) = component {
+                    url.push(&part.to_string_lossy());
+                }
+            }
+        }
+
+        resolve
     }
 }
 
@@ -93,6 +125,14 @@ impl FromStr for ModelManifest {
 
         let download_url = parser.url("download_url")?;
         let download_hash = parser.hash::<Sha1>("download_hash")?;
+        let mut resolve_url = download_url.clone();
+
+        resolve_url
+            .path_segments_mut()
+            .map_err(|_| ModelManifestParseError::UrlCannotBeBase)?
+            .push("resolve")
+            .push(download_hash.as_str());
+
         let mut download_files = BTreeMap::new();
 
         while let Some(file) = parse_download_file(&mut parser)? {
@@ -113,6 +153,7 @@ impl FromStr for ModelManifest {
             license_url,
             homepage_url,
 
+            resolve_url,
             download_url,
             download_hash,
             download_files,
@@ -155,6 +196,16 @@ file2.onnx
             manifest.download_hash.as_str(),
             "0000000000000000000000000000000000000001"
         );
+        assert_eq!(
+            manifest.resolve_url.as_str(),
+            "https://download-url/resolve/0000000000000000000000000000000000000001"
+        );
+
+        assert_eq!(
+            manifest.resolve_url(Path::new("some/path")).as_str(),
+            "https://download-url/resolve/0000000000000000000000000000000000000001/some/path"
+        );
+
         assert_eq!(manifest.download_files.len(), 2);
 
         assert_eq!(manifest.download_files["file1"].path.as_str(), "file1");
