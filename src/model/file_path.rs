@@ -12,10 +12,6 @@ impl FilePath {
         &self.0
     }
 
-    pub fn into_path_buf(self) -> PathBuf {
-        PathBuf::from(self.0)
-    }
-
     pub fn to_path_buf(&self) -> PathBuf {
         PathBuf::from(self.as_str())
     }

@@ -62,6 +62,7 @@ fn parse_download_file(
 }
 
 // TODO: Rename this to ModelManifestV1 and wrap it with enum?
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct ModelManifest {
     /// This refers to the encoding format for this struct/manifest file.

@@ -1,5 +1,4 @@
-use crate::model::FileSize;
-
+#[allow(dead_code)]
 pub enum SizeBase {
     Base2,
     Base10,
@@ -42,7 +41,7 @@ pub fn format_disk_size(bytes: f64, base: SizeBase) -> (String, &'static str) {
         .trim_end_matches('.')
         .to_string();
 
-    (format!("{formatted}"), units[unit])
+    (formatted.to_string(), units[unit])
 }
 
 pub fn print_format_table(lines: &[Vec<String>], gap: usize) {
