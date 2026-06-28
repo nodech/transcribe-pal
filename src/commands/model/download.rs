@@ -1,10 +1,10 @@
 use std::{fmt::Write, io::IsTerminal, path::PathBuf};
 
-use anyhow::Context;
+use anyhow::{self, Context};
 use clap::Args;
 use indicatif::{
     MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState,
-    ProgressStyle,
+    ProgressStyle, style::TemplateError,
 };
 use tracing::{debug, instrument};
 
@@ -75,6 +75,7 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
     let fetch_style = pacman_style("yellow/blue", true)?;
     let verify_style = pacman_style("yellow/yellow", false)?;
     let done_style = pacman_style("green/green", false)?;
+    let error_style = error_style()?;
 
     let all_files = downloader.len();
     let total = all.add(ProgressBar::new(downloader.total_size()));
@@ -83,6 +84,7 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
     total.set_prefix(format!("Total (0/{})", all_files));
 
     let mut done = 0;
+    let mut errored = 0;
     while let Some(mut dfile) = downloader.next() {
         let file_name = dfile.file_path().to_string_lossy().into_owned();
         let current = all.insert_before(
@@ -102,8 +104,17 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
         let mut is_progress_style_set = false;
 
         loop {
-            let res = dfile.process()?;
-            match res {
+            let progress = match dfile.process() {
+                Ok(r) => r,
+                Err(e) => {
+                    errored += 1;
+                    current.set_style(error_style.clone());
+                    current.finish_with_message(e.to_string());
+                    break;
+                }
+            };
+
+            match progress {
                 DownloadProgress::Fetch => current.set_message("fetching..."),
                 DownloadProgress::Resume {
                     downloaded,
@@ -155,6 +166,10 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
     total.set_style(done_style.clone());
     total.finish();
 
+    if errored != 0 {
+        return Err(anyhow::anyhow!("failed download for {} items", errored));
+    }
+
     Ok(())
 }
 
@@ -175,6 +190,12 @@ fn draw_target() -> ProgressDrawTarget {
 
 fn multi() -> MultiProgress {
     MultiProgress::with_draw_target(draw_target())
+}
+
+fn error_style() -> Result<ProgressStyle, TemplateError> {
+    ProgressStyle::with_template(&format!(
+        " {{prefix:<{NAME_WIDTH}}} {{msg:.red}}"
+    ))
 }
 
 fn pacman_template(bar_style: &str, show_transfer: bool) -> String {
