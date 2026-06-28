@@ -1,4 +1,4 @@
-use std::{fs, marker::PhantomData, path::Path, str::FromStr};
+use std::{fs, io::Read, marker::PhantomData, path::Path, str::FromStr};
 
 use sha1::Digest;
 
@@ -61,14 +61,23 @@ impl<T: HashKind> std::fmt::Display for Hash<T> {
 }
 
 pub fn hash_file<H: HashKind>(file: &Path) -> std::io::Result<Hash<H>> {
-    fs::read(file).map(|c| {
-        let mut hasher = H::Hasher::new();
-        hasher.update(c);
+    let mut file = fs::OpenOptions::new().read(true).open(file)?;
+    let mut hasher = H::Hasher::new();
 
-        Hash::<H> {
-            inner: hex_encode(hasher.finalize()),
-            _size: PhantomData,
+    let mut buf = [0u8; 256 * 1024];
+
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
         }
+    }
+
+    Ok(Hash::<H> {
+        inner: hex_encode(hasher.finalize()),
+        _size: PhantomData,
     })
 }
 
