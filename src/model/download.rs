@@ -331,7 +331,18 @@ impl<'a, 's, 'sd, T: Backend> DownloadFile<'a, 's, 'sd, T> {
 
                 let mut read_buf = [0u8; DOWNLOAD_BUF_SIZE];
 
-                let n = reader.read(&mut read_buf)?;
+                let n = loop {
+                    match reader.read(&mut read_buf) {
+                        Ok(n) => break n,
+                        Err(e)
+                            if e.kind() == std::io::ErrorKind::Interrupted =>
+                        {
+                            continue;
+                        }
+                        Err(e) => return Err(e.into()),
+                    }
+                };
+
                 file.write_all(&read_buf[..n])?;
 
                 file_details.downloaded_size += n as FileSize;
