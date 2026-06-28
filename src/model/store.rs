@@ -24,7 +24,6 @@ pub struct FileEntry {
 
 #[derive(Debug)]
 pub struct DirectoryContents {
-    root: PathBuf,
     files: BTreeMap<PathBuf, FileEntry>,
 }
 
@@ -40,11 +39,15 @@ pub trait Backend {
 
 pub struct FSBackend;
 
-pub struct Store<'m, T: Backend> {
+pub struct Store<T: Backend> {
     backend: T,
     root_dir: StoreDirectoryPath,
-    model_dir: PathBuf,
+}
+
+pub struct ModelStore<'m, T: Backend> {
+    store: Store<T>,
     manifest: &'m ModelManifest,
+    model_dir: PathBuf,
 }
 
 impl StoreDirectoryPath {
@@ -68,10 +71,6 @@ impl StoreDirectoryPath {
 
     pub fn as_path(&self) -> &Path {
         self.0.as_path()
-    }
-
-    pub fn into_path_buf(self) -> PathBuf {
-        self.0
     }
 }
 
@@ -119,19 +118,11 @@ impl Backend for FSBackend {
     }
 }
 
-impl<'a, T: Backend> Store<'a, T> {
-    pub fn new(
-        root: StoreDirectoryPath,
-        manifest: &'a ModelManifest,
-        backend: T,
-    ) -> Self {
-        let model_dir = root.as_path().join(manifest.model_path());
-
+impl<T: Backend> Store<T> {
+    pub fn new(root: StoreDirectoryPath, backend: T) -> Self {
         Self {
             backend,
             root_dir: root,
-            manifest,
-            model_dir,
         }
     }
 
@@ -139,6 +130,29 @@ impl<'a, T: Backend> Store<'a, T> {
         self.root_dir.as_path()
     }
 
+    pub fn into_model_store<'a>(
+        self,
+        manifest: &'a ModelManifest,
+    ) -> ModelStore<'a, T> {
+        let model_dir = self.root_dir.as_path().join(manifest.model_path());
+
+        ModelStore {
+            store: self,
+            manifest,
+            model_dir,
+        }
+    }
+
+    pub fn acquire_lock(&self) -> Result<LockFile, LockFileError> {
+        acquire_lock_file(self.root_dir.as_path())
+    }
+
+    pub fn ensure_dir(&mut self) -> Result<(), T::Error> {
+        self.backend.init_directory(self.root_dir.as_path())
+    }
+}
+
+impl<'a, T: Backend> ModelStore<'a, T> {
     pub fn model_path(&self) -> &Path {
         self.model_dir.as_path()
     }
@@ -147,32 +161,13 @@ impl<'a, T: Backend> Store<'a, T> {
         self.manifest
     }
 
-    pub fn acquire_lock(&self) -> Result<LockFile, LockFileError> {
-        acquire_lock_file(self.root_dir.as_path())
-    }
-
     pub fn ensure_dir(&mut self) -> Result<(), T::Error> {
-        self.backend.init_directory(self.model_dir.as_path())
+        self.store.backend.init_directory(self.model_dir.as_path())
     }
-
-    // pub fn get_meta_file(&mut self) -> Metadata {
-    //     let mut meta_path = self.model_dir.clone();
-    //     meta_path.set_extension("meta");
-    //
-    //     self.backend
-    //         .read_to_string(&meta_path)
-    //         .ok()
-    //         .and_then(|data| data.parse::<Metadata>().ok())
-    //         .filter(|meta| meta.model_version == self.manifest.model_version)
-    //         .unwrap_or_else(|| Metadata::new(self.manifest))
-    // }
 
     pub fn list_dir(&mut self) -> Result<DirectoryContents, T::Error> {
-        let files = self.backend.list_dir(&self.model_dir)?;
+        let files = self.store.backend.list_dir(&self.model_dir)?;
 
-        Ok(DirectoryContents {
-            root: self.model_dir.clone(),
-            files,
-        })
+        Ok(DirectoryContents { files })
     }
 }

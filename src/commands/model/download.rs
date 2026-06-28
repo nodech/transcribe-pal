@@ -25,14 +25,13 @@ pub(crate) struct DownloadCommandArgs {
     /// Model store directory
     #[arg(long)]
     store_dir: Option<PathBuf>,
-
-    /// Accept the license of the model.
-    #[arg(long, short)]
-    yes: bool,
-
-    /// Overwrite files if necessary.
-    #[arg(long, short)]
-    force: bool,
+    // /// Accept the license of the model.
+    // #[arg(long, short)]
+    // yes: bool,
+    //
+    // /// Overwrite files if necessary.
+    // #[arg(long, short)]
+    // force: bool,
 }
 
 #[instrument(level = "debug", name = "download_model", skip_all)]
@@ -46,19 +45,28 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
         .ok_or(anyhow::anyhow!("Could not find model: {}", model))?;
 
     let backend = model::FSBackend::new();
-    let mut store = model::Store::new(store_dir, manifest, backend);
+    let mut store = model::Store::new(store_dir, backend);
 
     store.ensure_dir().with_context(|| {
-        format!("Failed to create \"{}\"", store.model_path().display())
+        format!("Failed to create \"{}\"", store.path().display())
     })?;
 
     let _guard = store.acquire_lock()?;
 
-    let request = model::DownloadRequest::new(&mut store)?;
+    let mut model_store = store.into_model_store(manifest);
+
+    model_store.ensure_dir().with_context(|| {
+        format!(
+            "Failed to create \"{}\"",
+            model_store.model_path().display()
+        )
+    })?;
+
+    let request = model::DownloadRequest::new(&mut model_store)?;
 
     debug!("download request created");
 
-    let mut downloader = model::Download::new(&mut store, request);
+    let mut downloader = model::Download::new(&mut model_store, request);
 
     debug!("starting download");
 
@@ -144,6 +152,7 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
         }
     }
 
+    total.set_style(done_style.clone());
     total.finish();
 
     Ok(())

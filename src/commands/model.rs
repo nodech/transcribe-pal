@@ -1,8 +1,10 @@
+use std::path::PathBuf;
+
 use clap::{Args, Subcommand};
 
 use crate::{
     format::{SizeBase, format_disk_size, print_format_table},
-    model,
+    model::{self, StoreDirectoryPath},
 };
 
 mod download;
@@ -29,7 +31,11 @@ pub(crate) struct VerifyCommandArgs {
 }
 
 #[derive(Debug, Args)]
-pub(crate) struct ListCommandArgs {}
+pub(crate) struct ListCommandArgs {
+    /// Model store directory
+    #[arg(long)]
+    store_dir: Option<PathBuf>,
+}
 
 pub(crate) fn run(cmd_args: ModelCommandArgs) -> anyhow::Result<()> {
     match cmd_args.model_command {
@@ -40,12 +46,15 @@ pub(crate) fn run(cmd_args: ModelCommandArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn list_models(_args: ListCommandArgs) -> anyhow::Result<()> {
+fn list_models(args: ListCommandArgs) -> anyhow::Result<()> {
+    let store_dir = StoreDirectoryPath::from_opt_path(args.store_dir)?;
+
     let model_manifests = model::load_manifests()?;
 
     let headers = vec![
         "model".to_string(),
-        "size on disk".to_string(),
+        "model size".to_string(),
+        "on disk".to_string(),
         "license".to_string(),
         "homepage".to_string(),
     ];

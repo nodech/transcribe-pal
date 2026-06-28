@@ -13,9 +13,9 @@ use ureq::{
 };
 
 use crate::model::{
-    FileSize, Store,
+    FileSize,
     hash::{Hash, Sha256, hash_file},
-    store::Backend,
+    store::{Backend, ModelStore},
 };
 
 const DOWNLOAD_BUF_SIZE: usize = 64 * 1024;
@@ -113,7 +113,7 @@ pub enum DownloadError {
 }
 
 pub struct Download<'s, 'sd, T: Backend> {
-    store: &'s mut Store<'sd, T>,
+    store: &'s mut ModelStore<'sd, T>,
     files: BTreeSet<DownloadStage>,
     downloaded_size: FileSize,
     total_size: FileSize,
@@ -155,7 +155,9 @@ pub struct DownloadRequest {
 }
 
 impl DownloadRequest {
-    pub fn new<T: Backend>(store: &mut Store<'_, T>) -> Result<Self, T::Error> {
+    pub fn new<T: Backend>(
+        store: &mut ModelStore<'_, T>,
+    ) -> Result<Self, T::Error> {
         let mut pending = BTreeSet::new();
         let files = store.list_dir()?;
         let manifest = store.manifest();
@@ -201,7 +203,10 @@ impl DownloadRequest {
 }
 
 impl<'s, 'sd, T: Backend> Download<'s, 'sd, T> {
-    pub fn new(store: &'s mut Store<'sd, T>, request: DownloadRequest) -> Self {
+    pub fn new(
+        store: &'s mut ModelStore<'sd, T>,
+        request: DownloadRequest,
+    ) -> Self {
         let DownloadRequest {
             downloaded_size,
             total_size,
