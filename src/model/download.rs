@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use thiserror::Error;
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, trace};
 use ureq::{
     Body, BodyReader,
     http::{Response, StatusCode},
@@ -65,6 +65,7 @@ pub enum DownloadStage {
         file: File,
         reader: BodyReader<'static>,
     },
+    VerifyQueued(DownloadFileDetails),
     Verify(DownloadFileDetails),
     Done(DownloadFileDetails),
 }
@@ -125,6 +126,22 @@ pub struct DownloadFile<'a, 's, 'ds, T: Backend> {
 }
 
 #[derive(Debug)]
+pub enum DownloadProgress {
+    Fetch,
+    Resume {
+        downloaded: FileSize,
+        downloaded_total: FileSize,
+    },
+    Progress {
+        downloaded: FileSize,
+        downloaded_total: FileSize,
+    },
+    Verify,
+    Finalize,
+    Done,
+}
+
+#[derive(Debug)]
 enum DownloadOpenOptions {
     Write,
     Append,
@@ -162,7 +179,7 @@ impl DownloadRequest {
                 Some(entry) if entry.size == file.size => {
                     file_details.downloaded_size = entry.size;
                     downloaded_size += entry.size;
-                    DownloadStage::Verify(file_details)
+                    DownloadStage::VerifyQueued(file_details)
                 }
                 Some(entry) if entry.size < file.size && entry.size > 0 => {
                     file_details.downloaded_size = entry.size;
@@ -199,6 +216,18 @@ impl<'s, 'sd, T: Backend> Download<'s, 'sd, T> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.files.len()
+    }
+
+    pub fn downloaded_size(&self) -> FileSize {
+        self.downloaded_size
+    }
+
+    pub fn total_size(&self) -> FileSize {
+        self.total_size
+    }
+
     pub fn next<'a>(&'a mut self) -> Option<DownloadFile<'a, 's, 'sd, T>> {
         self.files.pop_first().map(|ds| DownloadFile::new(self, ds))
     }
@@ -222,7 +251,7 @@ impl<'a, 's, 'sd, T: Backend> DownloadFile<'a, 's, 'sd, T> {
     }
 
     #[instrument(level = "debug", name = "download_file.process", skip_all)]
-    pub fn process(&mut self) -> Result<Option<()>, DownloadError> {
+    pub fn process(&mut self) -> Result<DownloadProgress, DownloadError> {
         let stage = self.stage.take().expect("Stage must exist");
 
         match stage {
@@ -239,7 +268,7 @@ impl<'a, 's, 'sd, T: Backend> DownloadFile<'a, 's, 'sd, T> {
                     reader,
                 });
 
-                Ok(Some(()))
+                Ok(DownloadProgress::Fetch)
             }
             DownloadStage::Resume(mut file_details) => {
                 debug!(
@@ -256,6 +285,8 @@ impl<'a, 's, 'sd, T: Backend> DownloadFile<'a, 's, 'sd, T> {
                 let open_opts = match status_code {
                     StatusCode::PARTIAL_CONTENT => DownloadOpenOptions::Append,
                     StatusCode::OK => {
+                        self.download.downloaded_size -=
+                            file_details.downloaded_size;
                         file_details.downloaded_size = 0;
                         DownloadOpenOptions::Write
                     }
@@ -268,6 +299,7 @@ impl<'a, 's, 'sd, T: Backend> DownloadFile<'a, 's, 'sd, T> {
 
                 let file = open_opts.open(&path)?;
                 let reader = response.into_body().into_reader();
+                let downloaded = file_details.downloaded_size;
 
                 self.stage = Some(DownloadStage::Progress {
                     file_details,
@@ -275,14 +307,17 @@ impl<'a, 's, 'sd, T: Backend> DownloadFile<'a, 's, 'sd, T> {
                     reader,
                 });
 
-                Ok(Some(()))
+                Ok(DownloadProgress::Resume {
+                    downloaded,
+                    downloaded_total: self.download.downloaded_size,
+                })
             }
             DownloadStage::Progress {
                 mut file_details,
                 mut file,
                 mut reader,
             } => {
-                debug!(
+                trace!(
                     "progressing file stream \"{}\" {}/{}",
                     file_details.file_path().display(),
                     file_details.downloaded_size,
@@ -295,19 +330,29 @@ impl<'a, 's, 'sd, T: Backend> DownloadFile<'a, 's, 'sd, T> {
                 file.write_all(&read_buf[..n])?;
 
                 file_details.downloaded_size += n as FileSize;
+                self.download.downloaded_size += n as FileSize;
+
+                let downloaded = file_details.downloaded_size;
 
                 if n == 0 {
                     debug!("download finished");
                     self.stage = Some(DownloadStage::Verify(file_details));
+                    Ok(DownloadProgress::Verify)
                 } else {
                     self.stage = Some(DownloadStage::Progress {
                         file_details,
                         file,
                         reader,
                     });
+                    Ok(DownloadProgress::Progress {
+                        downloaded,
+                        downloaded_total: self.download.downloaded_size,
+                    })
                 }
-
-                Ok(Some(()))
+            }
+            DownloadStage::VerifyQueued(file_details) => {
+                self.stage = Some(DownloadStage::Verify(file_details));
+                Ok(DownloadProgress::Verify)
             }
             DownloadStage::Verify(file_details) => {
                 if !file_details.is_done() {
@@ -332,13 +377,21 @@ impl<'a, 's, 'sd, T: Backend> DownloadFile<'a, 's, 'sd, T> {
 
                 self.stage = Some(DownloadStage::Done(file_details));
 
-                Ok(Some(()))
+                Ok(DownloadProgress::Finalize)
             }
             DownloadStage::Done(file_details) => {
                 debug!("we are done with: {:?}", file_details.file_path());
-                Ok(None)
+                Ok(DownloadProgress::Done)
             }
         }
+    }
+
+    pub fn expected_size(&self) -> Option<FileSize> {
+        self.stage.as_ref().map(|s| s.file().expected_size)
+    }
+
+    pub fn downloaded_size(&self) -> Option<FileSize> {
+        self.stage.as_ref().map(|s| s.file().downloaded_size)
     }
 
     pub fn file_path(&self) -> &Path {
@@ -388,6 +441,7 @@ impl DownloadStage {
             DownloadStage::Fetch(file_details) => file_details,
             DownloadStage::Resume(file_details) => file_details,
             DownloadStage::Progress { file_details, .. } => file_details,
+            DownloadStage::VerifyQueued(file_details) => file_details,
             DownloadStage::Verify(file_details) => file_details,
             DownloadStage::Done(file_details) => file_details,
         }
@@ -410,6 +464,9 @@ impl std::fmt::Debug for DownloadStage {
                 .field("file_details", file_details)
                 .field("file", file)
                 .finish(),
+            DownloadStage::VerifyQueued(file_details) => {
+                f.debug_tuple("VerifyQueued").field(file_details).finish()
+            }
             DownloadStage::Verify(file_details) => {
                 f.debug_tuple("Verify").field(file_details).finish()
             }

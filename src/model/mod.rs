@@ -9,16 +9,11 @@ mod line_parser;
 mod manifest;
 mod store;
 
+pub use download::{Download, DownloadProgress, DownloadRequest};
 pub use store::{FSBackend, Store, StoreDirectoryPath};
 
 use file_path::FilePath;
 use manifest::{ModelManifest, ModelManifestParseError};
-use tracing::{debug, instrument};
-
-use crate::model::{
-    download::{Download, DownloadError, DownloadRequest},
-    store::Backend,
-};
 
 pub type FileSize = u64;
 pub type ManifestMap = HashMap<&'static str, ModelManifest>;
@@ -40,42 +35,6 @@ pub fn load_manifests() -> Result<ManifestMap, LoadManifestError> {
     }
 
     Ok(hash_map)
-}
-
-#[derive(Debug, Error)]
-pub enum DownloadFailed<E>
-where
-    E: std::error::Error + Send + Sync + 'static,
-{
-    #[error(transparent)]
-    LoadManifestError(#[from] LoadManifestError),
-
-    #[error(transparent)]
-    DownloadStepFailed(#[from] DownloadError),
-
-    #[error("Store Backend Error: {0}")]
-    StoreBackend(E),
-}
-
-#[instrument(level = "debug", name = "download_files", skip_all)]
-pub fn download_files<'m, T: Backend>(
-    store: &mut store::Store<'m, T>,
-) -> Result<(), DownloadFailed<T::Error>> {
-    let download_request =
-        DownloadRequest::new(store).map_err(DownloadFailed::StoreBackend)?;
-
-    debug!("download request created");
-
-    let mut downloader = Download::new(store, download_request);
-
-    debug!("starting download");
-    while let Some(mut file) = downloader.next() {
-        debug!("processing: {:?}", file.file_path());
-
-        while let Some(s) = file.process()? {}
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ pub enum SizeBase {
 }
 
 impl SizeBase {
-    fn units(&self) -> [&str; 5] {
+    fn units(&self) -> [&'static str; 5] {
         match self {
             SizeBase::Base2 => ["B", "KiB", "MiB", "GiB", "TiB"],
             SizeBase::Base10 => ["B", "KB", "MB", "GB", "TB"],
@@ -21,15 +21,15 @@ impl SizeBase {
     }
 }
 
-pub fn format_disk_size(bytes: FileSize, base: SizeBase) -> String {
+pub fn format_disk_size(bytes: f64, base: SizeBase) -> (String, &'static str) {
     let kib: f64 = base.kilo();
     let units: [&str; 5] = base.units();
 
-    if (bytes as f64) < kib {
-        return format!("{bytes} B");
+    if bytes < kib {
+        return (format!("{bytes:.0}"), units[0]);
     }
 
-    let mut size = bytes as f64;
+    let mut size = bytes;
     let mut unit = 0;
 
     while size >= kib && unit < units.len() - 1 {
@@ -42,7 +42,7 @@ pub fn format_disk_size(bytes: FileSize, base: SizeBase) -> String {
         .trim_end_matches('.')
         .to_string();
 
-    format!("{formatted} {}", units[unit])
+    (format!("{formatted}"), units[unit])
 }
 
 pub fn print_format_table(lines: &[Vec<String>], gap: usize) {
