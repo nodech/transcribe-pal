@@ -15,6 +15,7 @@ use ureq::{
 use crate::model::{
     FileSize,
     hash::{Hash, Sha256, hash_file},
+    manifest::ModelManifest,
     store::{Backend, ModelStore},
 };
 
@@ -112,15 +113,16 @@ pub enum DownloadError {
     },
 }
 
-pub struct Download<'s, 'sd, T: Backend> {
-    store: &'s mut ModelStore<'sd, T>,
+pub struct Download<'m> {
+    manifest: &'m ModelManifest,
     files: BTreeSet<DownloadStage>,
+    model_path: PathBuf,
     downloaded_size: FileSize,
     total_size: FileSize,
 }
 
-pub struct DownloadFile<'a, 's, 'ds, T: Backend> {
-    download: &'a mut Download<'s, 'ds, T>,
+pub struct DownloadFile<'d, 'm> {
+    download: &'d mut Download<'m>,
     remote_url: url::Url,
     stage: Option<DownloadStage>,
 }
@@ -156,7 +158,7 @@ pub struct DownloadRequest {
 
 impl DownloadRequest {
     pub fn new<T: Backend>(
-        store: &mut ModelStore<'_, T>,
+        store: &mut ModelStore<'_, '_, T>,
     ) -> Result<Self, T::Error> {
         let mut pending = BTreeSet::new();
         let files = store.list_dir()?;
@@ -202,9 +204,10 @@ impl DownloadRequest {
     }
 }
 
-impl<'s, 'sd, T: Backend> Download<'s, 'sd, T> {
+impl<'m> Download<'m> {
     pub fn new(
-        store: &'s mut ModelStore<'sd, T>,
+        model_path: PathBuf,
+        manifest: &'m ModelManifest,
         request: DownloadRequest,
     ) -> Self {
         let DownloadRequest {
@@ -214,8 +217,9 @@ impl<'s, 'sd, T: Backend> Download<'s, 'sd, T> {
         } = request;
 
         Self {
-            store,
+            manifest,
             files,
+            model_path,
             downloaded_size,
             total_size,
         }
@@ -233,20 +237,15 @@ impl<'s, 'sd, T: Backend> Download<'s, 'sd, T> {
         self.total_size
     }
 
-    pub fn next<'a>(&'a mut self) -> Option<DownloadFile<'a, 's, 'sd, T>> {
+    pub fn next<'d>(&'d mut self) -> Option<DownloadFile<'d, 'm>> {
         self.files.pop_first().map(|ds| DownloadFile::new(self, ds))
     }
 }
 
-impl<'a, 's, 'sd, T: Backend> DownloadFile<'a, 's, 'sd, T> {
-    pub fn new(
-        download: &'a mut Download<'s, 'sd, T>,
-        stage: DownloadStage,
-    ) -> Self {
-        let remote_url = download
-            .store
-            .manifest()
-            .resolve_url(stage.file().file_path());
+impl<'d, 'm> DownloadFile<'d, 'm> {
+    pub fn new(download: &'d mut Download<'m>, stage: DownloadStage) -> Self {
+        let remote_url =
+            download.manifest.resolve_url(stage.file().file_path());
 
         Self {
             download,
@@ -418,7 +417,7 @@ impl<'a, 's, 'sd, T: Backend> DownloadFile<'a, 's, 'sd, T> {
     }
 
     pub fn store_path(&self, path: &Path) -> PathBuf {
-        self.download.store.model_path().join(path)
+        self.download.model_path.join(path)
     }
 
     fn request_file_range(

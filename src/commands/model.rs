@@ -4,7 +4,7 @@ use clap::{Args, Subcommand};
 
 use crate::{
     format::{SizeBase, format_disk_size, print_format_table},
-    model::{self, StoreDirectoryPath},
+    model,
 };
 
 mod download;
@@ -46,9 +46,7 @@ pub(crate) fn run(cmd_args: ModelCommandArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn list_models(args: ListCommandArgs) -> anyhow::Result<()> {
-    let store_dir = StoreDirectoryPath::from_opt_path(args.store_dir)?;
-
+fn list_models(_args: ListCommandArgs) -> anyhow::Result<()> {
     let model_manifests = model::load_manifests()?;
 
     let headers = vec![

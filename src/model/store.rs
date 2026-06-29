@@ -44,8 +44,8 @@ pub struct Store<T: Backend> {
     root_dir: StoreDirectoryPath,
 }
 
-pub struct ModelStore<'m, T: Backend> {
-    store: Store<T>,
+pub struct ModelStore<'s, 'm, T: Backend> {
+    store: &'s mut Store<T>,
     manifest: &'m ModelManifest,
     model_dir: PathBuf,
 }
@@ -130,19 +130,6 @@ impl<T: Backend> Store<T> {
         self.root_dir.as_path()
     }
 
-    pub fn into_model_store<'a>(
-        self,
-        manifest: &'a ModelManifest,
-    ) -> ModelStore<'a, T> {
-        let model_dir = self.root_dir.as_path().join(manifest.model_path());
-
-        ModelStore {
-            store: self,
-            manifest,
-            model_dir,
-        }
-    }
-
     pub fn acquire_lock(&self) -> Result<LockFile, LockFileError> {
         acquire_lock_file(self.root_dir.as_path())
     }
@@ -152,7 +139,20 @@ impl<T: Backend> Store<T> {
     }
 }
 
-impl<'a, T: Backend> ModelStore<'a, T> {
+impl<'s, 'm, T: Backend> ModelStore<'s, 'm, T> {
+    pub fn from_store(
+        store: &'s mut Store<T>,
+        manifest: &'m ModelManifest,
+    ) -> Self {
+        let model_dir = store.root_dir.as_path().join(manifest.model_path());
+
+        Self {
+            model_dir,
+            store,
+            manifest,
+        }
+    }
+
     pub fn model_path(&self) -> &Path {
         self.model_dir.as_path()
     }

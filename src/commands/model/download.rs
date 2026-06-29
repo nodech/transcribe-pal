@@ -10,7 +10,7 @@ use tracing::{debug, instrument};
 
 use crate::{
     format::{SizeBase, format_disk_size},
-    model::{self, DownloadProgress, StoreDirectoryPath},
+    model::{self, DownloadProgress, ModelStore, StoreDirectoryPath},
     transcribe::ModelKind,
 };
 
@@ -44,8 +44,8 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
         .get(model.to_name())
         .ok_or(anyhow::anyhow!("Could not find model: {}", model))?;
 
-    let backend = model::FSBackend::new();
-    let mut store = model::Store::new(store_dir, backend);
+    let fs = model::FSBackend::new();
+    let mut store = model::Store::new(store_dir, fs);
 
     store.ensure_dir().with_context(|| {
         format!("Failed to create \"{}\"", store.path().display())
@@ -53,7 +53,7 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
 
     let _guard = store.acquire_lock()?;
 
-    let mut model_store = store.into_model_store(manifest);
+    let mut model_store = ModelStore::from_store(&mut store, manifest);
 
     model_store.ensure_dir().with_context(|| {
         format!(
@@ -66,7 +66,11 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
 
     debug!("download request created");
 
-    let mut downloader = model::Download::new(&mut model_store, request);
+    let mut downloader = model::Download::new(
+        model_store.model_path().to_path_buf(),
+        manifest,
+        request,
+    );
 
     debug!("starting download");
 
