@@ -4,7 +4,9 @@ use clap::Args;
 
 use crate::{
     format::{SizeBase, format_disk_size, print_format_table},
-    model::{self, FileSize, ModelManifest, ModelStore, StoreDirectoryPath},
+    model::{
+        self, Backend, FileSize, ModelManifest, ModelStore, StoreDirectoryPath,
+    },
     transcribe::ModelKind,
 };
 
@@ -119,8 +121,8 @@ pub(super) fn list_models(args: ListCommandArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn store_info(
-    store: &mut model::Store<model::FSBackend>,
+fn store_info<T: Backend>(
+    store: &mut model::Store<T>,
     manifest: &ModelManifest,
 ) -> Result<(InstallStatus, f64), anyhow::Error> {
     let mut model_store = ModelStore::from_store(store, manifest);
