@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, btree_map::Iter},
     fs, io,
     path::{Path, PathBuf},
 };
@@ -35,6 +35,8 @@ pub trait Backend {
         &mut self,
         path: &Path,
     ) -> Result<BTreeMap<PathBuf, FileEntry>, Self::Error>;
+
+    fn exists(&self, path: &Path) -> bool;
 }
 
 pub struct FSBackend;
@@ -78,6 +80,10 @@ impl DirectoryContents {
     pub fn get(&self, path: &Path) -> Option<FileEntry> {
         self.files.get(path).copied()
     }
+
+    pub fn iter(&self) -> Iter<'_, PathBuf, FileEntry> {
+        self.files.iter()
+    }
 }
 
 impl FSBackend {
@@ -115,6 +121,10 @@ impl Backend for FSBackend {
         }
 
         Ok(files)
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        fs::exists(path).unwrap_or_default()
     }
 }
 
@@ -163,6 +173,10 @@ impl<'s, 'm, T: Backend> ModelStore<'s, 'm, T> {
 
     pub fn ensure_dir(&mut self) -> Result<(), T::Error> {
         self.store.backend.init_directory(self.model_dir.as_path())
+    }
+
+    pub fn exists(&self) -> bool {
+        self.store.backend.exists(self.model_dir.as_path())
     }
 
     pub fn list_dir(&mut self) -> Result<DirectoryContents, T::Error> {

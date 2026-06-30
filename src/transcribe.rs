@@ -139,7 +139,7 @@ impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
 #[error("Unknown model \"{0}\"")]
 pub struct ModelKindUnknown(String);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ModelKind {
     Parakeet,
 }
