@@ -2,6 +2,7 @@ use clap::{Args, Subcommand};
 
 mod download;
 mod list;
+mod remove;
 
 #[derive(Debug, Args)]
 pub(crate) struct ModelCommandArgs {
@@ -13,10 +14,10 @@ pub(crate) struct ModelCommandArgs {
 pub(crate) enum ModelCommand {
     /// List models
     List(list::ListCommandArgs),
-    /// Download model
+    /// Download and verify model
     Download(download::DownloadCommandArgs),
-    // /// Verify model files
-    // Verify(VerifyCommandArgs),
+    /// Remove installed models
+    Remove(remove::RemoveCommandArgs),
 }
 
 #[derive(Debug, Args)]
@@ -28,6 +29,7 @@ pub(crate) fn run(cmd_args: ModelCommandArgs) -> anyhow::Result<()> {
     match cmd_args.model_command {
         ModelCommand::List(args) => list::list_models(args)?,
         ModelCommand::Download(args) => download::download_model(args)?,
+        ModelCommand::Remove(args) => remove::remove_model(args)?,
     }
 
     Ok(())

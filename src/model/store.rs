@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, btree_map::Iter},
+    collections::{BTreeMap, BTreeSet, btree_map::Iter},
     fs, io,
     path::{Path, PathBuf},
 };
@@ -13,6 +13,15 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 #[error("Could not determine the store directory")]
 pub struct DetermineDirectoryError;
+
+#[derive(Debug, thiserror::Error)]
+pub enum RemoveModelError<T: Backend> {
+    #[error("Incorrect path prefix")]
+    IncorrectPrefix,
+
+    #[error("Remove failed: {0}")]
+    Backend(T::Error),
+}
 
 #[derive(Debug, Clone)]
 pub struct StoreDirectoryPath(PathBuf);
@@ -31,10 +40,18 @@ pub trait Backend {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn init_directory(&mut self, path: &Path) -> Result<(), Self::Error>;
-    fn list_dir(
+
+    fn list_dirs(
+        &mut self,
+        path: &Path,
+    ) -> Result<BTreeSet<PathBuf>, Self::Error>;
+
+    fn list_filenames_and_sizes(
         &mut self,
         path: &Path,
     ) -> Result<BTreeMap<PathBuf, FileEntry>, Self::Error>;
+
+    fn remove_dir(&mut self, path: &Path) -> Result<(), Self::Error>;
 
     fn exists(&self, path: &Path) -> bool;
 }
@@ -105,7 +122,28 @@ impl Backend for FSBackend {
         fs::DirBuilder::new().recursive(true).create(path)
     }
 
-    fn list_dir(
+    fn list_dirs(
+        &mut self,
+        path: &Path,
+    ) -> Result<BTreeSet<PathBuf>, Self::Error> {
+        let dir_files = fs::read_dir(path)?;
+        let mut files: BTreeSet<PathBuf> = BTreeSet::new();
+
+        for d in dir_files {
+            let entry = d?;
+            let metadata = entry.metadata()?;
+
+            if !metadata.is_dir() {
+                continue;
+            }
+
+            files.insert(entry.path());
+        }
+
+        Ok(files)
+    }
+
+    fn list_filenames_and_sizes(
         &mut self,
         path: &Path,
     ) -> Result<BTreeMap<PathBuf, FileEntry>, Self::Error> {
@@ -127,6 +165,10 @@ impl Backend for FSBackend {
         }
 
         Ok(files)
+    }
+
+    fn remove_dir(&mut self, path: &Path) -> Result<(), Self::Error> {
+        fs::remove_dir_all(path)
     }
 
     fn exists(&self, path: &Path) -> bool {
@@ -152,6 +194,23 @@ impl<T: Backend> Store<T> {
 
     pub fn ensure_dir(&mut self) -> Result<(), T::Error> {
         self.backend.init_directory(self.root_dir.as_path())
+    }
+
+    pub fn list_dirs(&mut self) -> Result<BTreeSet<PathBuf>, T::Error> {
+        self.backend.list_dirs(self.root_dir.as_path())
+    }
+
+    pub fn remove_dir(
+        &mut self,
+        path: &Path,
+    ) -> Result<(), RemoveModelError<T>> {
+        if !path.starts_with(self.root_dir.as_path()) {
+            return Err(RemoveModelError::IncorrectPrefix);
+        }
+
+        self.backend
+            .remove_dir(path)
+            .map_err(RemoveModelError::Backend)
     }
 }
 
@@ -205,7 +264,10 @@ impl<'s, 'm, T: Backend> ModelStore<'s, 'm, T> {
     }
 
     pub fn list_dir(&mut self) -> Result<DirectoryContents, T::Error> {
-        let files = self.store.backend.list_dir(&self.model_dir)?;
+        let files = self
+            .store
+            .backend
+            .list_filenames_and_sizes(&self.model_dir)?;
 
         Ok(DirectoryContents { files })
     }
