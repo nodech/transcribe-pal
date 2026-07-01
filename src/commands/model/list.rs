@@ -5,7 +5,8 @@ use clap::Args;
 use crate::{
     format::{SizeBase, format_disk_size, print_format_table},
     model::{
-        self, Backend, FileSize, ModelManifest, ModelStore, StoreDirectoryPath,
+        self, Backend, ModelManifest, ModelStore, ModelStoreStatus,
+        StoreDirectoryPath,
     },
     transcribe::ModelKind,
 };
@@ -17,18 +18,10 @@ pub(crate) struct ListCommandArgs {
     store_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum InstallStatus {
-    None,
-    Partial,
-    Installed,
-}
-
 struct TableEntry {
     model: ModelKind,
     model_size: f64,
-    install_status: InstallStatus,
-    disk_size: f64,
+    install_status: ModelStoreStatus,
     license_name: Option<String>,
     homepage: Option<url::Url>,
 }
@@ -51,15 +44,11 @@ const COLUMNS: [Column; TABLE_COLUMNS] = [
     },
     Column {
         name: "status",
-        value: |t| match t.install_status {
-            InstallStatus::None => "Not installed".to_string(),
-            InstallStatus::Partial => "partial".to_string(),
-            InstallStatus::Installed => "installed".to_string(),
-        },
+        value: |t| t.install_status.to_string(),
     },
     Column {
         name: "on disk size",
-        value: |t| size_to_string(t.disk_size),
+        value: |t| size_to_string(t.install_status.disk_size() as f64),
     },
     Column {
         name: "license",
@@ -102,7 +91,7 @@ pub(super) fn list_models(args: ListCommandArgs) -> anyhow::Result<()> {
         model_manifests
             .into_values()
             .map(|m| {
-                let (install_status, disk_size) = store_info(&mut store, &m)?;
+                let install_status = store_info(&mut store, &m)?;
 
                 Ok(TableEntry {
                     model: m.name,
@@ -110,7 +99,6 @@ pub(super) fn list_models(args: ListCommandArgs) -> anyhow::Result<()> {
                     license_name: Some(m.license_name),
                     homepage: Some(m.homepage_url),
                     install_status,
-                    disk_size,
                 })
             })
             .map(|r| r.map(|m| row(m).to_vec()))
@@ -124,22 +112,7 @@ pub(super) fn list_models(args: ListCommandArgs) -> anyhow::Result<()> {
 fn store_info<T: Backend>(
     store: &mut model::Store<T>,
     manifest: &ModelManifest,
-) -> Result<(InstallStatus, f64), anyhow::Error> {
+) -> Result<ModelStoreStatus, anyhow::Error> {
     let mut model_store = ModelStore::from_store(store, manifest);
-
-    if !model_store.exists() {
-        return Ok((InstallStatus::None, 0.0));
-    }
-
-    let expected_size: FileSize = manifest.size_on_disk();
-    let list = model_store.list_dir()?;
-    let sum: FileSize = list.iter().map(|v| v.1.size).sum();
-
-    if expected_size == sum {
-        Ok((InstallStatus::Installed, sum as f64))
-    } else if sum == 0 {
-        Ok((InstallStatus::None, 0.0))
-    } else {
-        Ok((InstallStatus::Partial, sum as f64))
-    }
+    model_store.status().map_err(Into::into)
 }

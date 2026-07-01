@@ -52,6 +52,12 @@ pub struct ModelStore<'s, 'm, T: Backend> {
     model_dir: PathBuf,
 }
 
+pub enum ModelStoreStatus {
+    Installed(FileSize),
+    Partial(FileSize),
+    NotInstalled,
+}
+
 impl StoreDirectoryPath {
     pub fn try_default() -> Result<Self, DetermineDirectoryError> {
         dirs::data_local_dir()
@@ -179,9 +185,48 @@ impl<'s, 'm, T: Backend> ModelStore<'s, 'm, T> {
         self.store.backend.exists(self.model_dir.as_path())
     }
 
+    pub fn status(&mut self) -> Result<ModelStoreStatus, T::Error> {
+        if !self.exists() {
+            return Ok(ModelStoreStatus::NotInstalled);
+        }
+
+        let expected_size = self.manifest.size_on_disk();
+        let list = self.list_dir()?;
+
+        let sum: FileSize = list.iter().map(|v| v.1.size).sum();
+
+        let status = match sum {
+            n if n == expected_size => ModelStoreStatus::Installed(n),
+            0 => ModelStoreStatus::NotInstalled,
+            n => ModelStoreStatus::Partial(n),
+        };
+
+        Ok(status)
+    }
+
     pub fn list_dir(&mut self) -> Result<DirectoryContents, T::Error> {
         let files = self.store.backend.list_dir(&self.model_dir)?;
 
         Ok(DirectoryContents { files })
+    }
+}
+
+impl std::fmt::Display for ModelStoreStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Installed(_) => f.write_str("Installed"),
+            Self::Partial(_) => f.write_str("Partial"),
+            Self::NotInstalled => f.write_str("Not installed"),
+        }
+    }
+}
+
+impl ModelStoreStatus {
+    pub fn disk_size(&self) -> FileSize {
+        match self {
+            Self::Installed(size) => *size,
+            Self::Partial(size) => *size,
+            Self::NotInstalled => 0,
+        }
     }
 }

@@ -10,7 +10,9 @@ mod manifest;
 mod store;
 
 pub use download::{Download, DownloadProgress, DownloadRequest};
-pub use store::{Backend, FSBackend, ModelStore, Store, StoreDirectoryPath};
+pub use store::{
+    Backend, FSBackend, ModelStore, ModelStoreStatus, Store, StoreDirectoryPath,
+};
 
 use file_path::FilePath;
 pub use manifest::{ModelManifest, ModelManifestParseError};
