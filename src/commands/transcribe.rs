@@ -14,7 +14,10 @@ use crate::model::{self, StoreDirectoryPath};
 use crate::output::WTypeWriter;
 use crate::output::{IoWriter, MultiWriter};
 use crate::shutdown::Shutdown;
-use crate::transcribe::{self, ModelConfig, ModelKind};
+use crate::transcribe::{
+    self, MAX_SPEECH_END_DELAY_MS, MIN_SPEECH_END_DELAY_MS, ModelConfig,
+    ModelKind,
+};
 
 #[derive(Debug, Args)]
 pub(crate) struct TranscribeCommandArgs {
@@ -45,8 +48,12 @@ pub(crate) struct TranscribeCommandArgs {
     #[arg(long)]
     mic_threshold: Option<f32>,
 
-    /// Speech end delay (In milliseconds 150 - 1800)
-    #[arg(long, value_parser = clap::value_parser!(u64).range(150..=1800))]
+    #[arg(
+        long,
+        help = format!("Speech end delay in milliseconds ({MIN_SPEECH_END_DELAY_MS} - {MAX_SPEECH_END_DELAY_MS})"),
+        value_parser = clap::value_parser!(u64).range(
+            MIN_SPEECH_END_DELAY_MS..=MAX_SPEECH_END_DELAY_MS)
+    )]
     speech_end_delay: Option<u64>,
 }
 

@@ -14,13 +14,18 @@ use transcribe_rs::{SpeechModel, TranscribeError, TranscribeOptions};
 
 use super::audio::{self, AudioConsumer, SampleRate};
 
+// 30ms for standard 16k gives us 480 frame size.
 const FRAME_GRANULAR_DUR_MS: u64 = 30;
 
 // Min = 5 * 30ms = 150ms (5 * 480)
-const MIN_SPEECH_END_DELAY: u64 = 150;
+const MIN_SPEECH_END_DELAY_FRAMES: usize = 5;
+pub const MIN_SPEECH_END_DELAY_MS: u64 =
+    (MIN_SPEECH_END_DELAY_FRAMES as u64) * FRAME_GRANULAR_DUR_MS;
 
-// Max = 120 * 30ms = 3200ms, 3.2s
-const MAX_SPEECH_END_DELAY: u64 = 1800;
+// Max = 120 * 30ms = 3600ms, 3.6s
+const MAX_SPEECH_END_DELAY_FRAMES: usize = 120;
+pub const MAX_SPEECH_END_DELAY_MS: u64 =
+    (MAX_SPEECH_END_DELAY_FRAMES as u64) * FRAME_GRANULAR_DUR_MS;
 
 pub trait TranscriptWriter {
     type Error: Error + Sync + Send + 'static;
@@ -219,7 +224,9 @@ pub enum BuilderError {
     #[error("Invalid threshold {0}, it should be in range from 0.0 to 1.0")]
     InvalidThreshold(f32),
 
-    #[error("Invalid speech end delay {0:?}, it must be within 150..=3200 ms")]
+    #[error(
+        "Invalid speech end delay {0:?}, it must be within {MIN_SPEECH_END_DELAY_MS}..={MAX_SPEECH_END_DELAY_MS} ms"
+    )]
     InvalidSpeechEndDelay(Duration),
 
     #[error("Could not load model: {0}")]
@@ -282,8 +289,8 @@ impl AudioTranscriberBuilder {
         mut self,
         delay: Duration,
     ) -> Result<Self, BuilderError> {
-        if !(Duration::from_millis(MIN_SPEECH_END_DELAY)
-            ..=Duration::from_millis(MAX_SPEECH_END_DELAY))
+        if !(Duration::from_millis(MIN_SPEECH_END_DELAY_MS)
+            ..=Duration::from_millis(MAX_SPEECH_END_DELAY_MS))
             .contains(&delay)
         {
             return Err(BuilderError::InvalidSpeechEndDelay(delay));
@@ -355,14 +362,15 @@ impl AudioTranscriberBuilder {
             Box::new(vad::EnergyVad::new(frame_size, self.mic_threshold));
 
         // Min = 5 * 30ms = 150ms (5 * 480)
-        // Max = 120 * 30ms = 3200ms, 3.2s
+        // Max = 120 * 30ms = 3600ms, 3.6s
         let hangover_samples = frame_size_for_dur(
             self.speech_end_delay,
             model_audio_cfg.sample_rate,
         );
 
-        let hangover_frames =
-            hangover_samples.div_ceil(frame_size).clamp(5, 60);
+        let hangover_frames = hangover_samples
+            .div_ceil(frame_size)
+            .clamp(MIN_SPEECH_END_DELAY_FRAMES, MAX_SPEECH_END_DELAY_FRAMES);
 
         debug!(
             hangover_frames = hangover_frames,
@@ -410,6 +418,7 @@ impl AudioTranscriberBuilder {
     }
 }
 
+/// Get frame size by duration and sample rate. (min 1 frame)
 fn frame_size_for_dur(dur: Duration, sample_rate_hz: SampleRate) -> usize {
     dur.as_millis()
         .mul(sample_rate_hz as u128)
