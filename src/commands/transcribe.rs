@@ -2,17 +2,19 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use anyhow::anyhow;
 use clap::{Args, ValueEnum};
 use tracing::{debug, instrument};
 
 use crate::audio::device::AudioDeviceBuilder;
 use crate::audio::device_cb::MPSCAudioAdapter;
 use crate::audio::pipeline::{PipelineBuilder, RemixerAvg, ResampleProcessor};
+use crate::model::{self, StoreDirectoryPath};
 #[cfg(feature = "wayland")]
 use crate::output::WTypeWriter;
 use crate::output::{IoWriter, MultiWriter};
 use crate::shutdown::Shutdown;
-use crate::transcribe::{self, ModelConfig};
+use crate::transcribe::{self, ModelConfig, ModelKind};
 
 #[derive(Debug, Args)]
 pub(crate) struct TranscribeCommandArgs {
@@ -32,9 +34,9 @@ pub(crate) struct TranscribeCommandArgs {
     #[arg(long)]
     wtype: bool,
 
-    /// Path to extracted model
+    /// Path to the store
     #[arg(long)]
-    model_path: Option<PathBuf>,
+    store_dir: Option<PathBuf>,
 
     #[arg(long, value_enum, default_value_t = CommandModelKind::Parakeet)]
     model_kind: CommandModelKind,
@@ -72,11 +74,24 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         no_stdout,
         #[cfg(feature = "wayland")]
         wtype,
-        model_path,
+        store_dir,
         model_kind,
         mic_threshold,
         speech_end_delay: speech_delay,
     } = cmd_args;
+
+    let store_dir = StoreDirectoryPath::from_opt_path(store_dir)?;
+
+    let model_manifests = model::load_manifests()?;
+    let model_kind = ModelKind::from(model_kind);
+    let manifest = model_manifests.get(model_kind.to_name()).ok_or(anyhow!(
+        "Model {} is not supported (No manifest).",
+        model_kind.to_name()
+    ))?;
+
+    let fs_backend = model::FSBackend::new();
+    let mut store = model::Store::new(store_dir, fs_backend);
+    let model_store = model::ModelStore::from_store(&mut store, manifest);
 
     let mut multi = MultiWriter::new();
 
@@ -96,8 +111,9 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     }
 
     let model = ModelConfig::default()
-        .with_path_opt(model_path)
+        .with_path_opt(Some(model_store.model_path()))
         .with_kind(model_kind);
+
     let model_config = model.audio_conig();
 
     debug!(model = ?model, model_audio_config = ?model_config,
