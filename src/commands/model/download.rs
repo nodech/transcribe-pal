@@ -9,6 +9,7 @@ use indicatif::{
 use tracing::{debug, instrument};
 
 use crate::{
+    commands::CommandModelKind,
     format::{SizeBase, format_disk_size},
     model::{self, DownloadProgress, ModelStore, StoreDirectoryPath},
     transcribe::ModelKind,
@@ -19,8 +20,8 @@ const BAR_WIDTH: usize = 42;
 
 #[derive(Debug, Args)]
 pub(crate) struct DownloadCommandArgs {
-    /// Model name
-    model_name: String,
+    #[arg(value_enum, value_name = "MODEL")]
+    model: CommandModelKind,
 
     /// Model store directory
     #[arg(long)]
@@ -37,7 +38,7 @@ pub(crate) struct DownloadCommandArgs {
 #[instrument(level = "debug", name = "download_model", skip_all)]
 pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
     let store_dir = StoreDirectoryPath::from_opt_path(args.store_dir)?;
-    let model: ModelKind = args.model_name.parse()?;
+    let model: ModelKind = args.model.into();
 
     let model_manifests = model::load_manifests()?;
     let manifest = model_manifests

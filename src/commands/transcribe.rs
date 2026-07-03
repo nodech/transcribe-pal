@@ -3,12 +3,13 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use clap::{Args, ValueEnum};
+use clap::Args;
 use tracing::{debug, instrument};
 
 use crate::audio::device::AudioDeviceBuilder;
 use crate::audio::device_cb::MPSCAudioAdapter;
 use crate::audio::pipeline::{PipelineBuilder, RemixerAvg, ResampleProcessor};
+use crate::commands::CommandModelKind;
 use crate::model::{self, StoreDirectoryPath};
 #[cfg(feature = "wayland")]
 use crate::output::WTypeWriter;
@@ -42,7 +43,7 @@ pub(crate) struct TranscribeCommandArgs {
     store_dir: Option<PathBuf>,
 
     #[arg(long, value_enum, default_value_t = CommandModelKind::Parakeet)]
-    model_kind: CommandModelKind,
+    model: CommandModelKind,
 
     /// Microphone threshold (0.0 - 1.0)
     #[arg(long)]
@@ -57,20 +58,6 @@ pub(crate) struct TranscribeCommandArgs {
     speech_end_delay: Option<u64>,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum CommandModelKind {
-    /// This does not support direct streaming, but can "stream" with VAD.
-    Parakeet,
-}
-
-impl From<CommandModelKind> for transcribe::ModelKind {
-    fn from(val: CommandModelKind) -> Self {
-        match val {
-            CommandModelKind::Parakeet => transcribe::ModelKind::Parakeet,
-        }
-    }
-}
-
 #[instrument(level = "info", name = "transcribe", skip_all)]
 pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     debug!(command_args = ?cmd_args, "transcribe");
@@ -82,7 +69,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         #[cfg(feature = "wayland")]
         wtype,
         store_dir,
-        model_kind,
+        model,
         mic_threshold,
         speech_end_delay: speech_delay,
     } = cmd_args;
@@ -90,7 +77,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     let store_dir = StoreDirectoryPath::from_opt_path(store_dir)?;
 
     let model_manifests = model::load_manifests()?;
-    let model_kind = ModelKind::from(model_kind);
+    let model_kind = ModelKind::from(model);
     let manifest = model_manifests.get(model_kind.as_str()).ok_or(anyhow!(
         "Model {} is not supported (No manifest).",
         model_kind.as_str()

@@ -7,6 +7,7 @@ use anyhow::anyhow;
 use clap::Args;
 
 use crate::{
+    commands::CommandModelKind,
     model::{self, Backend, StoreDirectoryPath},
     transcribe::ModelKind,
 };
@@ -14,7 +15,7 @@ use crate::{
 #[derive(Debug, Args)]
 pub(crate) struct RemoveCommandArgs {
     /// Model name
-    model_name: Option<String>,
+    model: Option<CommandModelKind>,
 
     /// Model store directory
     #[arg(long)]
@@ -38,9 +39,9 @@ pub(super) fn remove_model(args: RemoveCommandArgs) -> anyhow::Result<()> {
     }
 
     let model: ModelKind = args
-        .model_name
+        .model
         .ok_or_else(|| anyhow!("provide model name or `--all`"))?
-        .parse()?;
+        .into();
 
     let mut model_path = store.path().to_path_buf();
     model_path.push(model.as_str());
