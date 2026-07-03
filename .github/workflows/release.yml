@@ -37,12 +37,6 @@ jobs:
             bin_ext: ".exe"
             features: ""
             archive: zip
-          - name: macos-intel
-            os: macos-15-intel
-            target: x86_64-apple-darwin
-            bin_ext: ""
-            features: ""
-            archive: tar.gz
           - name: macos-arm64
             os: macos-latest
             target: aarch64-apple-darwin
