@@ -85,7 +85,7 @@ impl ModelManifest {
     }
 
     pub fn model_path(&self) -> &Path {
-        Path::new(self.name.to_name())
+        Path::new(self.name.as_str())
     }
 
     pub fn resolve_url(&self, path: &Path) -> url::Url {

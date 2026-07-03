@@ -161,7 +161,7 @@ impl ModelKind {
         }
     }
 
-    pub fn to_name(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Parakeet => "parakeet",
         }
@@ -170,7 +170,7 @@ impl ModelKind {
 
 impl std::fmt::Display for ModelKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.to_name())
+        f.write_str(self.as_str())
     }
 }
 

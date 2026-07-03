@@ -43,7 +43,7 @@ pub(super) fn remove_model(args: RemoveCommandArgs) -> anyhow::Result<()> {
         .parse()?;
 
     let mut model_path = store.path().to_path_buf();
-    model_path.push(model.to_name());
+    model_path.push(model.as_str());
 
     if prompt(&format!("Removing {}", model_path.display()))? {
         store.remove_dir(&model_path).map_err(|e| {

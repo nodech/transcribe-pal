@@ -4,7 +4,6 @@ version = "0.0.1"
 edition = "2024"
 
 [features]
-default=["linux-defaults"] # Never commit !!!
 linux-defaults=["wayland"]
 wayland = []
 jack=["cpal/jack"]

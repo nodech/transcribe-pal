@@ -41,7 +41,7 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
 
     let model_manifests = model::load_manifests()?;
     let manifest = model_manifests
-        .get(model.to_name())
+        .get(model.as_str())
         .ok_or(anyhow::anyhow!("Could not find model: {}", model))?;
 
     let fs = model::FSBackend::new();

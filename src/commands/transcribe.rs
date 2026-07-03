@@ -91,9 +91,9 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
 
     let model_manifests = model::load_manifests()?;
     let model_kind = ModelKind::from(model_kind);
-    let manifest = model_manifests.get(model_kind.to_name()).ok_or(anyhow!(
+    let manifest = model_manifests.get(model_kind.as_str()).ok_or(anyhow!(
         "Model {} is not supported (No manifest).",
-        model_kind.to_name()
+        model_kind.as_str()
     ))?;
 
     let fs_backend = model::FSBackend::new();

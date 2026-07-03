@@ -5,9 +5,6 @@ on: push
 permissions:
   contents: read
 
-env:
-  ORT_CACHE_DIR: ${{ github.workspace }}/.ort-cache
-
 jobs:
   linux:
     runs-on: ubuntu-latest
@@ -24,12 +21,6 @@ jobs:
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libssl-dev pkg-config
-
-      - name: Cache ONNX Runtime
-        uses: actions/cache@v4
-        with:
-          path: .ort-cache
-          key: ort-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock') }}
 
       - name: Format
         run: cargo fmt --all --check
