@@ -6,14 +6,18 @@ use anyhow::anyhow;
 use clap::Args;
 use tracing::{debug, instrument};
 
-use crate::audio::device::AudioDeviceBuilder;
-use crate::audio::device_cb::MPSCAudioAdapter;
-use crate::audio::pipeline::{PipelineBuilder, RemixerAvg, ResampleProcessor};
-use crate::commands::CommandModelKind;
+use crate::audio::{
+    device::AudioDeviceBuilder,
+    device_cb::MPSCAudioAdapter,
+    pipeline::{PipelineBuilder, RemixerAvg, ResampleProcessor},
+};
+
+use crate::commands::{
+    CommandModelKind,
+    common::{MultiWriterOptions, multi_writer},
+};
+
 use crate::model::{self, StoreDirectoryPath};
-#[cfg(feature = "wayland")]
-use crate::output::WTypeWriter;
-use crate::output::{IoWriter, MultiWriter};
 use crate::shutdown::Shutdown;
 use crate::transcribe::{
     self, MAX_SPEECH_END_DELAY_MS, MIN_SPEECH_END_DELAY_MS, ModelConfig,
@@ -74,10 +78,10 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
         speech_end_delay: speech_delay,
     } = cmd_args;
 
-    let store_dir = StoreDirectoryPath::from_opt_path(store_dir)?;
-
-    let model_manifests = model::load_manifests()?;
     let model_kind = ModelKind::from(model);
+
+    let store_dir = StoreDirectoryPath::from_opt_path(store_dir)?;
+    let model_manifests = model::load_manifests()?;
     let manifest = model_manifests.get(model_kind.as_str()).ok_or(anyhow!(
         "Model {} is not supported (No manifest).",
         model_kind.as_str()
@@ -87,22 +91,11 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     let mut store = model::Store::new(store_dir, fs_backend);
     let model_store = model::ModelStore::from_store(&mut store, manifest);
 
-    let mut multi = MultiWriter::new();
-
-    if !no_stdout {
-        debug!("enabled stdout writer");
-        multi.push_writer(IoWriter::stdout());
-    }
-
-    #[cfg(feature = "wayland")]
-    if wtype {
-        debug!("enabled wtype writer");
-        multi.push_writer(WTypeWriter::new());
-    }
-
-    if multi.is_empty() {
-        return Err(anyhow::anyhow!("no transcript output is configured"));
-    }
+    let multi = multi_writer(MultiWriterOptions {
+        stdout: !no_stdout,
+        #[cfg(feature = "wayland")]
+        wtype,
+    })?;
 
     let model = ModelConfig::default()
         .with_path_opt(Some(model_store.model_path()))

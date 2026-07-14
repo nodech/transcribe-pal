@@ -15,6 +15,7 @@ impl From<CommandModelKind> for ModelKind {
     }
 }
 
+mod common;
 pub(crate) mod enumerate;
 pub(crate) mod model;
 pub(crate) mod transcribe;
