@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::OnceLock};
 
 use thiserror::Error;
 
@@ -11,32 +11,43 @@ mod store;
 
 pub use download::{Download, DownloadProgress, DownloadRequest};
 pub use store::{
-    Backend, FSBackend, ModelStore, ModelStoreStatus, Store, StoreDirectoryPath,
+    Backend, FSBackend, ModelStore, ModelStoreStatus, Store,
+    StoreDirectoryPath,
 };
 
 use file_path::FilePath;
 pub use manifest::{ModelManifest, ModelManifestParseError};
 
-pub type FileSize = u64;
-pub type ManifestMap = HashMap<&'static str, ModelManifest>;
-
 #[derive(Debug, Error)]
 #[error("Failed to parse \"{0}\" manifest: {1}")]
 pub struct LoadManifestError(&'static str, ModelManifestParseError);
 
-pub fn load_manifests() -> Result<ManifestMap, LoadManifestError> {
-    let raw_manifests =
-        [("parakeet", include_str!("./data/parakeet.manifest"))];
+pub type FileSize = u64;
+pub type ManifestMap = HashMap<&'static str, ModelManifest>;
 
-    let mut hash_map = HashMap::<&'static str, ModelManifest>::new();
+// Name -> Content
+type RawManifest = (&'static str, &'static str);
 
-    for (name, data) in raw_manifests.into_iter() {
-        let manifest: ModelManifest =
-            data.parse().map_err(|e| LoadManifestError(name, e))?;
+static RAW_MANIFESTS: [RawManifest; 1] =
+    [("parakeet", include_str!("./data/parakeet.manifest"))];
+
+static MANIFEST_MAP: OnceLock<Result<ManifestMap, LoadManifestError>> =
+    OnceLock::new();
+
+fn parse_manifests() -> Result<ManifestMap, LoadManifestError> {
+    let mut hash_map = ManifestMap::new();
+
+    for (name, data) in RAW_MANIFESTS.iter() {
+        let manifest = data.parse().map_err(|e| LoadManifestError(name, e))?;
         hash_map.insert(name, manifest);
     }
 
     Ok(hash_map)
+}
+
+pub fn load_manifests()
+-> Result<&'static ManifestMap, &'static LoadManifestError> {
+    MANIFEST_MAP.get_or_init(parse_manifests).as_ref()
 }
 
 #[cfg(test)]

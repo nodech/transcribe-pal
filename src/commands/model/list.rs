@@ -34,18 +34,9 @@ struct Column {
 }
 
 const COLUMNS: [Column; TABLE_COLUMNS] = [
-    Column {
-        name: "model",
-        value: |t| t.model.to_string(),
-    },
-    Column {
-        name: "model size",
-        value: |t| size_to_string(t.model_size),
-    },
-    Column {
-        name: "status",
-        value: |t| t.install_status.to_string(),
-    },
+    Column { name: "model", value: |t| t.model.to_string() },
+    Column { name: "model size", value: |t| size_to_string(t.model_size) },
+    Column { name: "status", value: |t| t.install_status.to_string() },
     Column {
         name: "on disk size",
         value: |t| size_to_string(t.install_status.disk_size() as f64),
@@ -89,15 +80,15 @@ pub(super) fn list_models(args: ListCommandArgs) -> anyhow::Result<()> {
 
     table.extend(
         model_manifests
-            .into_values()
+            .values()
             .map(|m| {
-                let install_status = store_info(&mut store, &m)?;
+                let install_status = store_info(&mut store, m)?;
 
                 Ok(TableEntry {
                     model: m.name,
                     model_size: m.size_on_disk() as f64,
-                    license_name: Some(m.license_name),
-                    homepage: Some(m.homepage_url),
+                    license_name: Some(m.license_name.clone()),
+                    homepage: Some(m.homepage_url.clone()),
                     install_status,
                 })
             })
