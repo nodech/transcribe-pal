@@ -7,7 +7,7 @@ use anyhow::anyhow;
 use clap::Args;
 
 use crate::{
-    commands::CommandModelKind,
+    commands::common::CommandModelKind,
     model::{self, Backend, StoreDirectoryPath},
     transcribe::ModelKind,
 };

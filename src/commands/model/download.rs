@@ -9,7 +9,7 @@ use indicatif::{
 use tracing::{debug, instrument};
 
 use crate::{
-    commands::CommandModelKind,
+    commands::common::CommandModelKind,
     format::{SizeBase, format_disk_size},
     model::{self, DownloadProgress, ModelStore, StoreDirectoryPath},
     transcribe::ModelKind,
@@ -57,10 +57,7 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
     let mut model_store = ModelStore::from_store(&mut store, manifest);
 
     model_store.ensure_dir().with_context(|| {
-        format!(
-            "Failed to create \"{}\"",
-            model_store.model_path().display()
-        )
+        format!("Failed to create \"{}\"", model_store.model_path().display())
     })?;
 
     let request = model::DownloadRequest::new(&mut model_store)?;
@@ -121,10 +118,7 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
 
             match progress {
                 DownloadProgress::Fetch => current.set_message("fetching..."),
-                DownloadProgress::Resume {
-                    downloaded,
-                    downloaded_total,
-                } => {
+                DownloadProgress::Resume { downloaded, downloaded_total } => {
                     current.set_style(fetch_style.clone());
                     current.set_message("resumming...");
                     current.set_position(downloaded);
@@ -161,7 +155,8 @@ pub(super) fn download_model(args: DownloadCommandArgs) -> anyhow::Result<()> {
                 DownloadProgress::Done => {
                     current.finish_with_message("");
                     done += 1;
-                    total.set_prefix(format!("Total ({}/{})", done, all_files));
+                    total
+                        .set_prefix(format!("Total ({}/{})", done, all_files));
                     break;
                 }
             }
