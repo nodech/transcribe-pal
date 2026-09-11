@@ -106,11 +106,7 @@ pub enum DownloadError {
     IncorrectVerificationState(FileSize, FileSize),
 
     #[error("Incorrect hash {hash} for the file {file}, expected: {expected}")]
-    IncorrectHash {
-        file: PathBuf,
-        hash: Hash<Sha256>,
-        expected: Hash<Sha256>,
-    },
+    IncorrectHash { file: PathBuf, hash: Hash<Sha256>, expected: Hash<Sha256> },
 }
 
 pub struct Download<'m> {
@@ -130,14 +126,8 @@ pub struct DownloadFile<'d, 'm> {
 #[derive(Debug)]
 pub enum DownloadProgress {
     Fetch,
-    Resume {
-        downloaded: FileSize,
-        downloaded_total: FileSize,
-    },
-    Progress {
-        downloaded: FileSize,
-        downloaded_total: FileSize,
-    },
+    Resume { downloaded: FileSize, downloaded_total: FileSize },
+    Progress { downloaded: FileSize, downloaded_total: FileSize },
     Verify,
     Finalize,
     Done,
@@ -196,11 +186,7 @@ impl DownloadRequest {
             pending.insert(stage);
         }
 
-        Ok(DownloadRequest {
-            downloaded_size,
-            total_size,
-            files: pending,
-        })
+        Ok(DownloadRequest { downloaded_size, total_size, files: pending })
     }
 }
 
@@ -210,19 +196,9 @@ impl<'m> Download<'m> {
         manifest: &'m ModelManifest,
         request: DownloadRequest,
     ) -> Self {
-        let DownloadRequest {
-            downloaded_size,
-            total_size,
-            files,
-        } = request;
+        let DownloadRequest { downloaded_size, total_size, files } = request;
 
-        Self {
-            manifest,
-            files,
-            model_path,
-            downloaded_size,
-            total_size,
-        }
+        Self { manifest, files, model_path, downloaded_size, total_size }
     }
 
     pub fn len(&self) -> usize {
@@ -247,11 +223,7 @@ impl<'d, 'm> DownloadFile<'d, 'm> {
         let remote_url =
             download.manifest.resolve_url(stage.file().file_path());
 
-        Self {
-            download,
-            stage: Some(stage),
-            remote_url,
-        }
+        Self { download, stage: Some(stage), remote_url }
     }
 
     #[instrument(level = "debug", name = "download_file.process", skip_all)]
@@ -472,9 +444,7 @@ impl std::fmt::Debug for DownloadStage {
             DownloadStage::Resume(file_details) => {
                 f.debug_tuple("Resume").field(file_details).finish()
             }
-            DownloadStage::Progress {
-                file_details, file, ..
-            } => f
+            DownloadStage::Progress { file_details, file, .. } => f
                 .debug_struct("Progress")
                 .field("file_details", file_details)
                 .field("file", file)
@@ -502,11 +472,7 @@ impl DownloadOpenOptions {
 }
 
 fn open_truncated_file(path: &Path) -> Result<File, io::Error> {
-    fs::OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(path)
+    fs::OpenOptions::new().write(true).truncate(true).create(true).open(path)
 }
 
 fn open_append_file(path: &Path) -> Result<File, io::Error> {

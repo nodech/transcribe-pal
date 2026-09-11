@@ -20,9 +20,7 @@ pub struct PipelineError {
 
 impl PipelineError {
     pub fn new(error: impl std::error::Error + Sync + Send + 'static) -> Self {
-        Self {
-            error: Box::new(error),
-        }
+        Self { error: Box::new(error) }
     }
 }
 

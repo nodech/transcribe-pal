@@ -8,7 +8,9 @@ pub(crate) struct EnumerateCommandArgs {
     debug: bool,
 }
 
-pub(crate) fn run(cmd_args: EnumerateCommandArgs) -> Result<(), anyhow::Error> {
+pub(crate) fn run(
+    cmd_args: EnumerateCommandArgs,
+) -> Result<(), anyhow::Error> {
     let EnumerateCommandArgs { debug } = cmd_args;
     let hosts = device_list::list_hosts();
 

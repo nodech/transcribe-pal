@@ -42,9 +42,7 @@ pub struct MPSCAudioCallback {
 
 impl MPSCAudioAdapter {
     pub fn new(item_buffer: NonZeroUsize) -> Self {
-        Self {
-            items: item_buffer.into(),
-        }
+        Self { items: item_buffer.into() }
     }
 
     #[instrument(level = "info", name = "mpsc_adapter.spawn", skip_all)]
@@ -53,10 +51,7 @@ impl MPSCAudioAdapter {
         mut consumer: W,
         shutdown: Shutdown,
     ) -> Result<
-        (
-            MPSCAudioAdapterHandle<W>,
-            impl AudioCallbackConsumer + 'static,
-        ),
+        (MPSCAudioAdapterHandle<W>, impl AudioCallbackConsumer + 'static),
         MPSCAudioAdapterError<W::Error>,
     > {
         let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(self.items);

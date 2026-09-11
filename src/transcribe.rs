@@ -60,13 +60,7 @@ where
         writer: W,
         chunked: VadChunked,
     ) -> Self {
-        Self {
-            model,
-            writer,
-            chunked,
-
-            skip_segments: 0,
-        }
+        Self { model, writer, chunked, skip_segments: 0 }
     }
 }
 
@@ -98,9 +92,7 @@ impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
         }
 
         trace!("Flushing text.");
-        writer
-            .flush()
-            .map_err(AudioTranscriberError::WriterFailed)?;
+        writer.flush().map_err(AudioTranscriberError::WriterFailed)?;
 
         Ok(())
     }
@@ -129,12 +121,8 @@ impl<W: TranscriptWriter> AudioConsumer for AudioTranscriber<W> {
             }
         }
 
-        writer
-            .push_text("\n")
-            .map_err(AudioTranscriberError::WriterFailed)?;
-        writer
-            .finish()
-            .map_err(AudioTranscriberError::WriterFailed)?;
+        writer.push_text("\n").map_err(AudioTranscriberError::WriterFailed)?;
+        writer.finish().map_err(AudioTranscriberError::WriterFailed)?;
 
         Ok(())
     }
@@ -420,8 +408,5 @@ impl AudioTranscriberBuilder {
 
 /// Get frame size by duration and sample rate. (min 1 frame)
 fn frame_size_for_dur(dur: Duration, sample_rate_hz: SampleRate) -> usize {
-    dur.as_millis()
-        .mul(sample_rate_hz as u128)
-        .div_ceil(1000)
-        .max(1) as usize
+    dur.as_millis().mul(sample_rate_hz as u128).div_ceil(1000).max(1) as usize
 }

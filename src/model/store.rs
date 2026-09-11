@@ -178,10 +178,7 @@ impl Backend for FSBackend {
 
 impl<T: Backend> Store<T> {
     pub fn new(root: StoreDirectoryPath, backend: T) -> Self {
-        Self {
-            backend,
-            root_dir: root,
-        }
+        Self { backend, root_dir: root }
     }
 
     pub fn path(&self) -> &Path {
@@ -208,9 +205,7 @@ impl<T: Backend> Store<T> {
             return Err(RemoveModelError::IncorrectPrefix);
         }
 
-        self.backend
-            .remove_dir(path)
-            .map_err(RemoveModelError::Backend)
+        self.backend.remove_dir(path).map_err(RemoveModelError::Backend)
     }
 }
 
@@ -221,11 +216,7 @@ impl<'s, 'm, T: Backend> ModelStore<'s, 'm, T> {
     ) -> Self {
         let model_dir = store.root_dir.as_path().join(manifest.model_path());
 
-        Self {
-            model_dir,
-            store,
-            manifest,
-        }
+        Self { model_dir, store, manifest }
     }
 
     pub fn model_path(&self) -> &Path {
@@ -264,10 +255,8 @@ impl<'s, 'm, T: Backend> ModelStore<'s, 'm, T> {
     }
 
     pub fn list_dir(&mut self) -> Result<DirectoryContents, T::Error> {
-        let files = self
-            .store
-            .backend
-            .list_filenames_and_sizes(&self.model_dir)?;
+        let files =
+            self.store.backend.list_filenames_and_sizes(&self.model_dir)?;
 
         Ok(DirectoryContents { files })
     }

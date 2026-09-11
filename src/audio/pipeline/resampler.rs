@@ -62,11 +62,7 @@ impl ResampleProcessor {
         to_spec.frames_per_buffer =
             resampler.output_frames_max() as RawBufferSize;
 
-        Ok(Self {
-            from_spec: from,
-            to_spec,
-            resampler,
-        })
+        Ok(Self { from_spec: from, to_spec, resampler })
     }
 
     pub fn to_sample_rate(

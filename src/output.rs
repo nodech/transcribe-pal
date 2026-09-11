@@ -156,9 +156,7 @@ pub struct WTypeWriter {
 #[cfg(feature = "wayland")]
 impl WTypeWriter {
     pub fn new() -> Self {
-        Self {
-            buffer: String::new(),
-        }
+        Self { buffer: String::new() }
     }
 
     #[instrument(level = "trace", name = "wtype_write", skip_all)]

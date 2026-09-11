@@ -43,14 +43,12 @@ impl<T: HashKind> FromStr for Hash<T> {
     type Err = IncorrectHash;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() != T::HEX_SIZE || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if s.len() != T::HEX_SIZE || !s.bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return Err(IncorrectHash);
         }
 
-        Ok(Self {
-            inner: s.to_owned(),
-            _size: PhantomData,
-        })
+        Ok(Self { inner: s.to_owned(), _size: PhantomData })
     }
 }
 
@@ -75,10 +73,7 @@ pub fn hash_file<H: HashKind>(file: &Path) -> std::io::Result<Hash<H>> {
         }
     }
 
-    Ok(Hash::<H> {
-        inner: hex_encode(hasher.finalize()),
-        _size: PhantomData,
-    })
+    Ok(Hash::<H> { inner: hex_encode(hasher.finalize()), _size: PhantomData })
 }
 
 const HEX_CHARS_LOWER: &[u8; 16] = b"0123456789abcdef";

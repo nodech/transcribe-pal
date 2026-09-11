@@ -45,19 +45,17 @@ fn parse_download_file(
 ) -> Result<Option<ModelManifestFile>, ModelManifestParseError> {
     parser
         .next()
-        .map(
-            |line| -> Result<ModelManifestFile, ModelManifestParseError> {
-                let file_name = line.value;
-                let file_hash = parser.hash::<Sha256>("file_hash")?;
-                let size = parser.usize("file_size")?;
+        .map(|line| -> Result<ModelManifestFile, ModelManifestParseError> {
+            let file_name = line.value;
+            let file_hash = parser.hash::<Sha256>("file_hash")?;
+            let size = parser.usize("file_size")?;
 
-                Ok(ModelManifestFile {
-                    path: FilePath::new(file_name),
-                    hash: file_hash,
-                    size: size as FileSize,
-                })
-            },
-        )
+            Ok(ModelManifestFile {
+                path: FilePath::new(file_name),
+                hash: file_hash,
+                size: size as FileSize,
+            })
+        })
         .transpose()
 }
 

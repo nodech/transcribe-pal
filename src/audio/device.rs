@@ -173,12 +173,7 @@ impl AudioDeviceBuilder {
         let device = self.resolve_device(&host)?;
         let config = self.resolve_config(&device)?;
 
-        Ok(AudioDevice {
-            host,
-            device,
-            config,
-            timeout: self.timeout,
-        })
+        Ok(AudioDevice { host, device, config, timeout: self.timeout })
     }
 
     fn resolve_host(&self) -> Result<Host, AudioDeviceBuilderError> {

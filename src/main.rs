@@ -30,7 +30,7 @@ enum Commands {
     /// Transcribe system audio to text
     Transcribe(commands::transcribe::TranscribeCommandArgs),
 
-    /// List all available hosts and devices on the system
+    /// List audio hosts and devices on the system
     Enumerate(commands::enumerate::EnumerateCommandArgs),
 
     /// Manage models

@@ -70,20 +70,14 @@ impl<T> ParsedLine<T> {
 
 impl<'a> LineParser<'a> {
     pub(super) fn new(lines_iter: std::str::Lines<'a>) -> Self {
-        LineParser {
-            processed: 0,
-            lines: lines_iter,
-        }
+        LineParser { processed: 0, lines: lines_iter }
     }
 
     pub(super) fn next(&mut self) -> Option<ParsedLine<String>> {
         self.lines.next().map(|l| {
             self.processed += 1;
 
-            ParsedLine {
-                value: l.to_string(),
-                line_no: self.processed,
-            }
+            ParsedLine { value: l.to_string(), line_no: self.processed }
         })
     }
 
@@ -112,10 +106,7 @@ impl<'a> LineParser<'a> {
 
         line.value
             .parse()
-            .map(|n| ParsedLine {
-                value: n,
-                line_no: line.line_no,
-            })
+            .map(|n| ParsedLine { value: n, line_no: line.line_no })
             .map_err(|e| LineParseError::UnknownModelName {
                 name,
                 line_no: line.line_no,
@@ -139,10 +130,7 @@ impl<'a> LineParser<'a> {
         parsed
             .value
             .parse::<usize>()
-            .map(|n| ParsedLine {
-                value: n,
-                line_no: parsed.line_no,
-            })
+            .map(|n| ParsedLine { value: n, line_no: parsed.line_no })
             .map_err(|e| LineParseError::ExpectedInteger {
                 name,
                 found: parsed.value,
@@ -164,10 +152,7 @@ impl<'a> LineParser<'a> {
         parsed
             .value
             .parse::<Hash<T>>()
-            .map(|n| ParsedLine {
-                value: n,
-                line_no: parsed.line_no,
-            })
+            .map(|n| ParsedLine { value: n, line_no: parsed.line_no })
             .map_err(|e| LineParseError::ExpectedHash {
                 name,
                 found: parsed.value,
@@ -190,10 +175,7 @@ impl<'a> LineParser<'a> {
         let parsed = self.string_line(name)?;
 
         Url::parse(&parsed.value)
-            .map(|u| ParsedLine {
-                value: u,
-                line_no: parsed.line_no,
-            })
+            .map(|u| ParsedLine { value: u, line_no: parsed.line_no })
             .map_err(|e| LineParseError::ExpectedUrl {
                 name,
                 found: parsed.value,
