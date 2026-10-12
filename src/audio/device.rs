@@ -41,15 +41,21 @@ impl AudioStream {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum AudioStreamError {
+    #[error(transparent)]
+    StreamError(#[from] cpal::StreamError),
+}
+
 pub trait AudioDeviceErrorCallback: Send + 'static {
-    fn error(&mut self, error: cpal::StreamError);
+    fn error(&mut self, error: AudioStreamError);
 }
 
 impl<F> AudioDeviceErrorCallback for F
 where
-    F: FnMut(StreamError) + Send + 'static,
+    F: FnMut(AudioStreamError) + Send + 'static,
 {
-    fn error(&mut self, error: cpal::StreamError) {
+    fn error(&mut self, error: AudioStreamError) {
         self(error)
     }
 }
@@ -71,7 +77,7 @@ impl AudioDevice {
         &mut self,
         cb: impl AudioCallbackConsumer,
     ) -> Result<AudioStream, AudioDeviceError> {
-        self.stream_with_error(cb, |_: StreamError| {})
+        self.stream_with_error(cb, |_: AudioStreamError| {})
     }
 
     pub fn stream_with_error(
@@ -108,7 +114,7 @@ impl AudioDevice {
             },
             move |err| {
                 error!(error = %err, "audio stream error");
-                err_cb.error(err);
+                err_cb.error(err.into());
             },
             self.timeout,
         )?;
