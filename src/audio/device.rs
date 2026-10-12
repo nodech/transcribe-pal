@@ -41,6 +41,19 @@ impl AudioStream {
     }
 }
 
+pub trait AudioDeviceErrorCallback: Send + 'static {
+    fn error(&mut self, error: cpal::StreamError);
+}
+
+impl<F> AudioDeviceErrorCallback for F
+where
+    F: FnMut(StreamError) + Send + 'static,
+{
+    fn error(&mut self, error: cpal::StreamError) {
+        self(error)
+    }
+}
+
 pub struct AudioDevice {
     device: Device,
     #[allow(dead_code)]
@@ -56,7 +69,15 @@ impl AudioDevice {
 
     pub fn stream(
         &mut self,
+        cb: impl AudioCallbackConsumer,
+    ) -> Result<AudioStream, AudioDeviceError> {
+        self.stream_with_error(cb, |_: StreamError| {})
+    }
+
+    pub fn stream_with_error(
+        &mut self,
         mut cb: impl AudioCallbackConsumer,
+        mut err_cb: impl AudioDeviceErrorCallback,
     ) -> Result<AudioStream, AudioDeviceError> {
         let parent = Span::current();
 
@@ -85,8 +106,9 @@ impl AudioDevice {
                     error!(error = %e, "failed to process audio data");
                 }
             },
-            |err| {
+            move |err| {
                 error!(error = %err, "audio stream error");
+                err_cb.error(err);
             },
             self.timeout,
         )?;
