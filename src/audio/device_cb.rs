@@ -9,8 +9,8 @@ use tracing::{info, instrument};
 
 use crate::shutdown::Shutdown;
 
-use super::AudioCallbackConsumer;
 use super::AudioConsumer;
+use super::device::AudioCallbackConsumer;
 
 #[derive(Debug, Error)]
 pub enum MPSCAudioAdapterError<E>

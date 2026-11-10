@@ -94,8 +94,6 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
 
     debug!("built transcriber");
 
-    let mpsc_adapter = MPSCAudioAdapter::new(NonZeroUsize::try_from(100)?);
-
     let mut device = AudioDeviceBuilder::new()
         .with_host(audio_input_args.host)
         .with_device(audio_input_args.device)
@@ -129,6 +127,8 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
     debug!("built audio pipeline");
 
     let shutdown = Shutdown::new();
+
+    let mpsc_adapter = MPSCAudioAdapter::new(NonZeroUsize::try_from(100)?);
 
     let (adapter_handle, audio_cb) =
         mpsc_adapter.spawn(audio_pipeline, shutdown.clone())?;

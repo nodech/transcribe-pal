@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::{str::FromStr, time::Duration};
 
 use anyhow::Result;
@@ -10,8 +11,8 @@ use thiserror::Error;
 use tracing::{Span, debug, debug_span, error, trace};
 
 use crate::audio::{
-    AudioCallbackConsumer, DeviceConfig, DeviceConfigError, RawBufferSize,
-    SampleFormatError, device_list::is_config_supported,
+    DeviceConfig, DeviceConfigError, RawBufferSize, SampleFormatError,
+    device_list::is_config_supported,
 };
 
 #[derive(Debug, Error)]
@@ -57,6 +58,22 @@ where
 {
     fn error(&mut self, error: AudioStreamError) {
         self(error)
+    }
+}
+
+pub trait AudioCallbackConsumer: Send + 'static {
+    type Error: Error + Send + Sync + 'static;
+    fn try_push_chunk(&mut self, samples: &[f32]) -> Result<(), Self::Error>;
+}
+
+impl<F, E> AudioCallbackConsumer for F
+where
+    E: Error + Send + Sync + 'static,
+    F: FnMut(&[f32]) -> Result<(), E> + Send + 'static,
+{
+    type Error = E;
+    fn try_push_chunk(&mut self, samples: &[f32]) -> Result<(), Self::Error> {
+        self(samples)
     }
 }
 
@@ -175,6 +192,7 @@ impl AudioDeviceBuilder {
         self
     }
 
+    // TODO: Maybe use Option<&str>?
     pub fn with_host(mut self, host_str: Option<String>) -> Self {
         self.host_str = host_str;
         self

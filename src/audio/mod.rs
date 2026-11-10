@@ -18,11 +18,6 @@ pub trait AudioConsumer {
     fn finish(&mut self) -> Result<(), Self::Error>;
 }
 
-pub trait AudioCallbackConsumer: Send + 'static {
-    type Error: Error + Send + Sync + 'static;
-    fn try_push_chunk(&mut self, samples: &[f32]) -> Result<(), Self::Error>;
-}
-
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub enum SampleFormat {
     #[default]
