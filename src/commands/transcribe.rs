@@ -20,7 +20,7 @@ use crate::{
 use crate::commands::common::{MultiWriterOptions, multi_writer};
 
 use crate::model::StoreDirectoryPath;
-use crate::shutdown::Shutdown;
+use crate::shutdown::SimpleShutdown;
 use crate::transcribe::ModelKind;
 
 #[derive(Debug, Args)]
@@ -126,7 +126,7 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
 
     debug!("built audio pipeline");
 
-    let shutdown = Shutdown::new();
+    let shutdown = SimpleShutdown::new();
 
     let mpsc_adapter = MPSCAudioAdapter::new(NonZeroUsize::try_from(100)?);
 

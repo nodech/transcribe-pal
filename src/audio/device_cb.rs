@@ -7,7 +7,7 @@ use std::thread::JoinHandle;
 use thiserror::Error;
 use tracing::{info, instrument};
 
-use crate::shutdown::Shutdown;
+use crate::shutdown::SimpleShutdown;
 
 use super::AudioConsumer;
 use super::device::AudioCallbackConsumer;
@@ -49,7 +49,7 @@ impl MPSCAudioAdapter {
     pub fn spawn<W: AudioConsumer + Send + 'static>(
         &self,
         mut consumer: W,
-        shutdown: Shutdown,
+        shutdown: SimpleShutdown,
     ) -> Result<
         (MPSCAudioAdapterHandle<W>, impl AudioCallbackConsumer + 'static),
         MPSCAudioAdapterError<W::Error>,
