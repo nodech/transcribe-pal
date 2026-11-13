@@ -137,7 +137,7 @@ pub(crate) fn run(
 
     let _ = session_handle
         .join()
-        .map_err(|_| anyhow!("Could not join the dyn_device."))?;
+        .map_err(|_| anyhow!("Could not join the audio session."))?;
 
     Ok(())
 }
