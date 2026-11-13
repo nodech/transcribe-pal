@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{EnvFilter, fmt};
 
+use crate::shutdown::SimpleShutdown;
+
 #[cfg(all(feature = "wayland", not(target_os = "linux")))]
 compile_error!("The `wayland` feature is only supported on Linux.");
 
@@ -57,8 +59,18 @@ fn main() {
     let cli = Cli::parse();
     let command = cli.command.expect("Command must exist.");
 
+    let sshutdown = SimpleShutdown::new();
+    let sshutdown_ctrlc = sshutdown.clone();
+
+    if let Err(e) = ctrlc::set_handler(move || sshutdown_ctrlc.request()) {
+        eprintln!("error: {e}");
+        std::process::exit(1);
+    }
+
     let cmd_result = match command {
-        Commands::Transcribe(cmd_args) => commands::transcribe::run(cmd_args),
+        Commands::Transcribe(cmd_args) => {
+            commands::transcribe::run(cmd_args, sshutdown)
+        }
         Commands::Enumerate(cmd_args) => commands::enumerate::run(cmd_args),
         Commands::Model(cmd_args) => commands::model::run(cmd_args),
     };

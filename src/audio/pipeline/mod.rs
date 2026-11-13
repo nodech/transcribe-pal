@@ -156,6 +156,12 @@ pub struct Pipeline<T: AudioConsumer + Send> {
     sink: T,
 }
 
+impl<T: AudioConsumer + Send> Pipeline<T> {
+    pub fn sink(self) -> T {
+        self.sink
+    }
+}
+
 impl<T> AudioConsumer for Pipeline<T>
 where
     T: AudioConsumer + Send,

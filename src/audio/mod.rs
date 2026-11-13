@@ -6,10 +6,16 @@ pub mod device;
 pub mod device_cb;
 pub mod device_list;
 pub mod pipeline;
+pub mod session;
 
 pub type SampleRate = cpal::SampleRate;
 pub type ChannelCount = cpal::ChannelCount;
 pub type RawBufferSize = cpal::FrameCount;
+
+pub use session::Session;
+pub use session::SessionAudioConfig;
+pub use session::SessionConfig;
+pub use session::SessionRetryConfig;
 
 pub trait AudioConsumer {
     type Error: Error + Send + Sync + 'static;

@@ -63,7 +63,10 @@ pub(crate) struct TranscribeCommandArgs {
 }
 
 #[instrument(level = "info", name = "transcribe", skip_all)]
-pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
+pub(crate) fn run(
+    cmd_args: TranscribeCommandArgs,
+    sshutdown: SimpleShutdown,
+) -> anyhow::Result<()> {
     debug!(command_args = ?cmd_args, "transcribe");
 
     let TranscribeCommandArgs {
@@ -126,24 +129,17 @@ pub(crate) fn run(cmd_args: TranscribeCommandArgs) -> anyhow::Result<()> {
 
     debug!("built audio pipeline");
 
-    let shutdown = SimpleShutdown::new();
-
     let mpsc_adapter = MPSCAudioAdapter::new(NonZeroUsize::try_from(100)?);
 
     let (adapter_handle, audio_cb) =
-        mpsc_adapter.spawn(audio_pipeline, shutdown.clone())?;
+        mpsc_adapter.spawn(audio_pipeline, sshutdown.clone())?;
 
     let mut stream = device.stream(audio_cb)?;
-
-    debug!("setup ctrl-c handler");
-    let shutdown_ctrlc = shutdown.clone();
-
-    ctrlc::set_handler(move || shutdown_ctrlc.request())?;
 
     debug!("starting audio stream");
     stream.play()?;
 
-    shutdown.wait();
+    sshutdown.wait();
 
     drop(stream);
     debug!("joining adapter thread");
