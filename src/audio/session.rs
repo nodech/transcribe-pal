@@ -1,9 +1,6 @@
 use std::{
     fmt::Debug,
-    sync::{
-        Arc,
-        mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
-    },
+    sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
     thread::{self, JoinHandle, spawn},
     time::Duration,
 };
@@ -116,28 +113,18 @@ pub struct SessionHandle {
 }
 
 impl SessionHandle {
-    pub fn shutdown_handle<'a>(&'a self) -> Arc<SessionShutdownHandle<'a>> {
-        Arc::new(SessionShutdownHandle { session_handle: self })
-    }
-
     pub fn join(self) -> thread::Result<Result<(), RetryStopped>> {
         self.device_handle.join()
     }
 }
 
-pub struct SessionShutdownHandle<'a> {
-    session_handle: &'a SessionHandle,
-}
-
-impl<'a> AtomicShutdown for SessionShutdownHandle<'a> {
+impl AtomicShutdown for SessionHandle {
     fn is_shutdown(&self) -> bool {
-        self.session_handle.device_handle.is_finished()
+        self.device_handle.is_finished()
     }
 
     fn request_shutdown(&self) {
-        if let Err(e) =
-            self.session_handle.shutdown_handle.send(Message::Shutdown)
-        {
+        if let Err(e) = self.shutdown_handle.send(Message::Shutdown) {
             println!("Failed to shutdown: {e}.");
         }
     }
@@ -152,34 +139,38 @@ pub struct Session<T: AudioConsumer + Send> {
     state: SessionState<T>,
 }
 
+#[instrument(level = "debug", name = "audio_session:start", skip_all)]
+pub(crate) fn start<T>(config: SessionConfig, sink: T) -> SessionHandle
+where
+    T: AudioConsumer + Send + 'static,
+{
+    let (tx, rx) = mpsc::sync_channel::<Message>(10);
+
+    let session = Session {
+        config,
+        lifecycle_tx: tx.clone(),
+        lifecycle_rx: rx,
+        state: SessionState::NotInit { sink },
+    };
+
+    let handle = spawn(move || {
+        debug!("Starting audio session...");
+        let mut audio_session = session;
+
+        let res = retry_loop(
+            &mut audio_session,
+            |audio_session| audio_session.run().into(),
+            |audio_session| audio_session.wait(),
+        );
+
+        debug!("Audio session stopped.");
+        res
+    });
+
+    SessionHandle { shutdown_handle: tx, device_handle: handle }
+}
+
 impl<T: AudioConsumer + Send + 'static> Session<T> {
-    pub fn new(config: SessionConfig, sink: T) -> Self {
-        let msg_chan = mpsc::sync_channel::<Message>(10);
-
-        Session {
-            config,
-            lifecycle_tx: msg_chan.0,
-            lifecycle_rx: msg_chan.1,
-            state: SessionState::NotInit { sink },
-        }
-    }
-
-    #[instrument(level = "debug", name = "dyn_device.spawn", skip_all)]
-    pub fn start(self) -> SessionHandle {
-        let lifecycle_tx = self.lifecycle_tx.clone();
-        let handle = spawn(move || {
-            let mut dyn_device = self;
-
-            retry_loop(
-                &mut dyn_device,
-                |dyn_device| dyn_device.run().into(),
-                |dyn_device| dyn_device.wait(),
-            )
-        });
-
-        SessionHandle { shutdown_handle: lifecycle_tx, device_handle: handle }
-    }
-
     fn wait(&mut self) -> Result<(), RetryStopped> {
         match self
             .lifecycle_rx
@@ -194,7 +185,7 @@ impl<T: AudioConsumer + Send + 'static> Session<T> {
         }
     }
 
-    #[instrument(level = "debug", name = "dyn_audio.run", skip_all)]
+    #[instrument(level = "debug", name = "audio_session.run", skip_all)]
     fn run(&mut self) -> Result<(), AttemptError> {
         debug!("init device");
         let mut device = try_init_device(&self.config.audio_config)?;
@@ -324,6 +315,7 @@ fn init_pipeline(
         })
 }
 
+#[derive(Debug)]
 pub enum RetryStopped {
     Shutdown,
     Disconnected,
