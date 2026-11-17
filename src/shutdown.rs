@@ -62,12 +62,14 @@ impl AtomicShutdown for SimpleShutdown {
 
 pub trait AtomicShutdown: Send + Sync {
     fn is_shutdown(&self) -> bool;
+    // It is not guaranteed it will be called once.
     fn request_shutdown(&self);
 }
 
 pub struct ShutdownController<'a> {
     poll_interval: Duration,
-    registered: Vec<Arc<dyn AtomicShutdown + 'a>>,
+    registered: Vec<&'a dyn AtomicShutdown>,
+    requested: Arc<AtomicBool>,
 }
 
 impl Default for ShutdownController<'_> {
@@ -78,10 +80,14 @@ impl Default for ShutdownController<'_> {
 
 impl<'a> ShutdownController<'a> {
     pub fn new(interval: Duration) -> Self {
-        ShutdownController { poll_interval: interval, registered: vec![] }
+        ShutdownController {
+            poll_interval: interval,
+            registered: vec![],
+            requested: Arc::new(AtomicBool::new(false)),
+        }
     }
 
-    pub fn register(&mut self, s: Arc<dyn AtomicShutdown + 'a>) {
+    pub fn register(&mut self, s: &'a dyn AtomicShutdown) {
         self.registered.push(s);
     }
 
@@ -94,10 +100,23 @@ impl<'a> ShutdownController<'a> {
             sleep(self.poll_interval);
         }
 
+        self.requested.store(true, ATOMIC_ORDERING);
         self.registered.iter().for_each(|r| r.request_shutdown());
 
         while !self.registered.iter().all(|r| r.is_shutdown()) {
             sleep(self.poll_interval);
         }
+    }
+}
+
+impl<'a> AtomicShutdown for ShutdownController<'a> {
+    fn request_shutdown(&self) {
+        if let Some(r) = self.registered.first() {
+            r.request_shutdown();
+        }
+    }
+
+    fn is_shutdown(&self) -> bool {
+        self.requested.load(ATOMIC_ORDERING)
     }
 }
