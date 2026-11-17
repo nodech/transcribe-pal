@@ -38,6 +38,7 @@ enum Commands {
     /// Manage models
     Model(commands::model::ModelCommandArgs),
 
+    #[cfg(unix)]
     /// Transcribe Daemon
     Daemon(commands::daemon::DaemonCommandArgs),
 }
@@ -76,6 +77,7 @@ fn main() {
         }
         Commands::Enumerate(cmd_args) => commands::enumerate::run(cmd_args),
         Commands::Model(cmd_args) => commands::model::run(cmd_args),
+        #[cfg(unix)]
         Commands::Daemon(cmd_args) => {
             commands::daemon::run(cmd_args, sshutdown)
         }

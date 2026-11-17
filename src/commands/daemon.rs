@@ -1,12 +1,15 @@
+#![cfg(unix)]
+
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
+use std::{fs, io};
 
 use anyhow::anyhow;
 use clap::Args;
 use tracing::{debug, instrument};
 
-use crate::audio;
+use crate::lockfile::acquire_lock_file;
+use crate::{PROJECT_NAME, audio};
 
 use crate::commands::common::{
     CommandModelKind, MultiWriterOptions, multi_writer,
@@ -18,6 +21,8 @@ use crate::transcribe::{
     self, MAX_SPEECH_END_DELAY_MS, MIN_SPEECH_END_DELAY_MS, ModelConfig,
     ModelKind,
 };
+
+mod server;
 
 #[derive(Debug, Args)]
 pub(crate) struct DaemonCommandArgs {
@@ -41,6 +46,10 @@ pub(crate) struct DaemonCommandArgs {
     /// Path to the store
     #[arg(long)]
     store_dir: Option<PathBuf>,
+
+    /// Path to the sock dir
+    #[arg(long)]
+    sock_dir: Option<PathBuf>,
 
     #[arg(long, value_enum, default_value_t = CommandModelKind::Parakeet)]
     model: CommandModelKind,
@@ -70,6 +79,7 @@ pub(crate) fn run(
         wtype,
         stdout,
         store_dir,
+        sock_dir,
         model,
         mic_threshold,
         speech_end_delay,
@@ -125,19 +135,43 @@ pub(crate) fn run(
         retry_config: audio::SessionRetryConfig::default(),
     };
 
-    let audio_session = audio::Session::new(device_config, transcriber);
-    let session_handle = audio_session.start();
+    let runtime_dir = sock_dir.unwrap_or_else(|| {
+        let mut dir = dirs::runtime_dir().unwrap_or_else(std::env::temp_dir);
+        dir.push(PROJECT_NAME);
+        dir
+    });
+
+    fs::create_dir_all(&runtime_dir)?;
+
+    let sock_file = runtime_dir.join("daemon.sock");
+    let lock_file = runtime_dir.join("daemon.lock");
+
+    let _lock = acquire_lock_file(&lock_file)?;
+
+    fs::remove_file(&sock_file).or_else(|e| {
+        if e.kind() == io::ErrorKind::NotFound { Ok(()) } else { Err(e) }
+    })?;
+
+    let session_handle = audio::session::start(device_config, transcriber);
+    let server_handle = server::start(sock_file);
 
     {
         let mut shutdown = ShutdownController::default();
-        shutdown.register(Arc::new(sshutdown));
-        shutdown.register(session_handle.shutdown_handle());
+        shutdown.register(&sshutdown);
+        shutdown.register(&session_handle);
+        shutdown.register(&server_handle);
         shutdown.wait();
     }
 
-    let _ = session_handle
+    session_handle
         .join()
-        .map_err(|_| anyhow!("Could not join the audio session."))?;
+        .expect("Failed to join thread")
+        .map_err(|e| anyhow!("Audio session failed: {:?}", e))?;
+
+    server_handle
+        .join()
+        .expect("Failed to join thread")
+        .map_err(|e| anyhow!("Daemon server failed: {:?}.", e))?;
 
     Ok(())
 }
