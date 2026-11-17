@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::path::Path;
 use thiserror::Error;
 use tracing::error;
@@ -22,14 +23,17 @@ pub enum LockFileError {
     TryLockError(#[from] std::fs::TryLockError),
 }
 
-pub fn acquire_lock_file(dir: &Path) -> Result<LockFile, LockFileError> {
-    let filename = dir.join("LOCK");
+pub fn acquire_lock_file_at(dir: &Path) -> Result<LockFile, LockFileError> {
+    let path = dir.join("LOCK");
+    acquire_lock_file(&path)
+}
 
+pub fn acquire_lock_file(path: &Path) -> Result<LockFile, LockFileError> {
     let file = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open(filename)
+        .open(path)
         .map_err(LockFileError::Io)?;
 
     file.try_lock()?;

@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     PROJECT_NAME,
-    lockfile::{LockFile, LockFileError, acquire_lock_file},
+    lockfile::{LockFile, LockFileError, acquire_lock_file_at},
     model::{FileSize, manifest::ModelManifest},
 };
 
@@ -186,7 +186,7 @@ impl<T: Backend> Store<T> {
     }
 
     pub fn acquire_lock(&self) -> Result<LockFile, LockFileError> {
-        acquire_lock_file(self.root_dir.as_path())
+        acquire_lock_file_at(self.root_dir.as_path())
     }
 
     pub fn ensure_dir(&mut self) -> Result<(), T::Error> {
