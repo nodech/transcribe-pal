@@ -211,7 +211,7 @@ struct Connection {
 }
 
 impl Connection {
-    #[instrument(level = "debug", name = "api-server:run", skip_all)]
+    #[instrument(level = "debug", name = "connection:run", skip_all)]
     fn run(&mut self) -> Result<(), ConnectionError> {
         debug!("Connection {} was initialized", self.id);
 
