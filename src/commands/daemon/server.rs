@@ -20,7 +20,7 @@ use anyhow::Result;
 use thiserror::Error;
 use tracing::{debug, instrument};
 
-use crate::shutdown::{AtomicShutdown, ShutdownController};
+use crate::shutdown::{AtomicShutdown, ShutdownAllController};
 
 const ATOMIC_ORDERING: Ordering = SeqCst;
 
@@ -111,7 +111,7 @@ pub fn start(sock_path: PathBuf) -> APIServerHandle {
         socket_path: socket_path.clone(),
         connections: BTreeSet::new(),
         shutdown_flag: shutdown_flag.clone(),
-        shutdown_ctrl: ShutdownController::default(),
+        shutdown_ctrl: ShutdownAllController::default(),
     };
 
     let handle = thread::spawn(move || {

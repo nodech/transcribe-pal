@@ -66,21 +66,21 @@ pub trait AtomicShutdown: Send + Sync {
     fn request_shutdown(&self);
 }
 
-pub struct ShutdownController<'a> {
+pub struct ShutdownAllController<'a> {
     poll_interval: Duration,
     registered: Vec<&'a dyn AtomicShutdown>,
     requested: Arc<AtomicBool>,
 }
 
-impl Default for ShutdownController<'_> {
+impl Default for ShutdownAllController<'_> {
     fn default() -> Self {
         Self::new(DEFAULT_POLL_TIME)
     }
 }
 
-impl<'a> ShutdownController<'a> {
+impl<'a> ShutdownAllController<'a> {
     pub fn new(interval: Duration) -> Self {
-        ShutdownController {
+        ShutdownAllController {
             poll_interval: interval,
             registered: vec![],
             requested: Arc::new(AtomicBool::new(false)),
@@ -109,7 +109,7 @@ impl<'a> ShutdownController<'a> {
     }
 }
 
-impl<'a> AtomicShutdown for ShutdownController<'a> {
+impl<'a> AtomicShutdown for ShutdownAllController<'a> {
     fn request_shutdown(&self) {
         if let Some(r) = self.registered.first() {
             r.request_shutdown();

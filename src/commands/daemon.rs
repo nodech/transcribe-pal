@@ -16,7 +16,7 @@ use crate::commands::common::{
 };
 
 use crate::model::{self, StoreDirectoryPath};
-use crate::shutdown::{ShutdownController, SimpleShutdown};
+use crate::shutdown::{ShutdownAllController, SimpleShutdown};
 use crate::transcribe::{
     self, MAX_SPEECH_END_DELAY_MS, MIN_SPEECH_END_DELAY_MS, ModelConfig,
     ModelKind,
@@ -156,7 +156,7 @@ pub(crate) fn run(
     let server_handle = server::start(sock_file);
 
     {
-        let mut shutdown = ShutdownController::default();
+        let mut shutdown = ShutdownAllController::default();
         shutdown.register(&sshutdown);
         shutdown.register(&session_handle);
         shutdown.register(&server_handle);
