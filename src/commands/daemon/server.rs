@@ -56,7 +56,7 @@ impl AtomicShutdown for APIServerHandle {
     }
 }
 
-struct APIServer {
+pub(super) struct APIServer {
     socket_path: Arc<Path>,
     shutdown_flag: Arc<AtomicBool>,
     connection_id: ConnectionId,
@@ -64,6 +64,33 @@ struct APIServer {
 }
 
 impl APIServer {
+    #[instrument(level = "debug", name = "api-server:start", skip_all)]
+    pub fn start(sock_path: PathBuf) -> APIServerHandle {
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let socket_path: Arc<Path> = sock_path.into();
+
+        let mut server = APIServer {
+            socket_path: socket_path.clone(),
+            connection_id: 0,
+            connections: BTreeMap::new(),
+            shutdown_flag: shutdown_flag.clone(),
+        };
+
+        let handle = thread::spawn(move || {
+            debug!("Starting server...");
+
+            let res = server.run();
+            debug!("Server stopped.");
+            res
+        });
+
+        APIServerHandle {
+            thread_handle: handle,
+            socket_path: socket_path.clone(),
+            shutdown_flag: shutdown_flag.clone(),
+        }
+    }
+
     #[instrument(level = "debug", name = "api-server.run", skip_all)]
     fn run(&mut self) -> Result<(), APIServerError> {
         let bind = UnixListener::bind(&self.socket_path)
@@ -82,7 +109,7 @@ impl APIServer {
                 break;
             }
 
-            match connection_init(stream, self.connection_id) {
+            match Connection::init(stream, self.connection_id) {
                 Ok(handle) => {
                     debug!("Accepted connection");
                     self.connections.insert(self.connection_id, handle);
@@ -117,33 +144,6 @@ impl APIServer {
         for (_, connection) in connections.into_iter() {
             _ = connection.join()
         }
-    }
-}
-
-#[instrument(level = "debug", name = "api-server:start", skip_all)]
-pub fn start(sock_path: PathBuf) -> APIServerHandle {
-    let shutdown_flag = Arc::new(AtomicBool::new(false));
-    let socket_path: Arc<Path> = sock_path.into();
-
-    let mut server = APIServer {
-        socket_path: socket_path.clone(),
-        connection_id: 0,
-        connections: BTreeMap::new(),
-        shutdown_flag: shutdown_flag.clone(),
-    };
-
-    let handle = thread::spawn(move || {
-        debug!("Starting server...");
-
-        let res = server.run();
-        debug!("Server stopped.");
-        res
-    });
-
-    APIServerHandle {
-        thread_handle: handle,
-        socket_path: socket_path.clone(),
-        shutdown_flag: shutdown_flag.clone(),
     }
 }
 
@@ -207,10 +207,36 @@ struct Connection {
     id: ConnectionId,
     max_line_len: usize,
     stream_read: BufReader<UnixStream>,
-    stream_write: Arc<Mutex<UnixStream>>,
+    _stream_write: Arc<Mutex<UnixStream>>,
 }
 
 impl Connection {
+    #[instrument(level = "debug", name = "connection:init", skip_all)]
+    fn init(
+        stream: UnixStream,
+        id: ConnectionId,
+    ) -> Result<ConnectionHandle, ConnectionError> {
+        let stream_shutdown =
+            stream.try_clone().map_err(ConnectionError::StreamClone)?;
+
+        let stream_write = Arc::new(Mutex::new(
+            stream.try_clone().map_err(ConnectionError::StreamClone)?,
+        ));
+
+        let stream_read = BufReader::new(stream);
+
+        let mut connection = Connection {
+            max_line_len: MAX_LINE_LEN,
+            stream_read,
+            _stream_write: stream_write.clone(),
+            id,
+        };
+
+        let handle = thread::spawn(move || connection.run());
+
+        Ok(ConnectionHandle { stream_shutdown, stream_write, handle, id })
+    }
+
     #[instrument(level = "debug", name = "connection:run", skip_all)]
     fn run(&mut self) -> Result<(), ConnectionError> {
         debug!("Connection {} was initialized", self.id);
@@ -242,30 +268,4 @@ impl Connection {
 
         Ok(())
     }
-}
-
-#[instrument(level = "debug", name = "connection::init", skip_all)]
-fn connection_init(
-    stream: UnixStream,
-    id: ConnectionId,
-) -> Result<ConnectionHandle, ConnectionError> {
-    let stream_shutdown =
-        stream.try_clone().map_err(ConnectionError::StreamClone)?;
-
-    let stream_write = Arc::new(Mutex::new(
-        stream.try_clone().map_err(ConnectionError::StreamClone)?,
-    ));
-
-    let stream_read = BufReader::new(stream);
-
-    let mut connection = Connection {
-        max_line_len: MAX_LINE_LEN,
-        stream_read,
-        stream_write: stream_write.clone(),
-        id,
-    };
-
-    let handle = thread::spawn(move || connection.run());
-
-    Ok(ConnectionHandle { stream_shutdown, stream_write, handle, id })
 }

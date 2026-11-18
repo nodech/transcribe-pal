@@ -1,25 +1,22 @@
-use std::{
-    fmt::Debug,
-    sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
-    thread::{self, JoinHandle, spawn},
-    time::Duration,
-};
+use std::fmt::Debug;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
+use std::thread::{self, JoinHandle, spawn};
+use std::time::Duration;
 
 use anyhow::Result;
 use thiserror::Error;
 use tracing::{debug, instrument};
 
-use crate::{
-    audio::{
-        AudioConsumer, SampleFormat,
-        device::{AudioDevice, AudioDeviceBuilder, AudioDeviceBuilderError},
-        pipeline::{
-            Pipeline, PipelineBuilder, PipelineError, RemixerAvg,
-            ResampleProcessor,
-        },
-    },
-    shutdown::AtomicShutdown,
+use crate::shutdown::AtomicShutdown;
+
+use crate::audio;
+use audio::device::{
+    AudioDevice, AudioDeviceBuilder, AudioDeviceBuilderError, AudioDeviceError,
 };
+use audio::pipeline::{
+    Pipeline, PipelineBuilder, PipelineError, RemixerAvg, ResampleProcessor,
+};
+use audio::{AudioConsumer, SampleFormat};
 
 use super::DeviceConfig;
 
@@ -49,6 +46,8 @@ pub struct SessionConfig {
 
 #[derive(Debug, PartialEq)]
 enum Message {
+    Play,
+    Pause,
     Shutdown,
     Error,
 }
@@ -107,6 +106,62 @@ impl<T: AudioConsumer + Send> SessionState<T> {
     }
 }
 
+#[derive(Debug)]
+pub enum RetryStopped {
+    Shutdown,
+    Disconnected,
+    AttemptError,
+    UnexpectedMessage,
+}
+
+#[derive(Debug, Error)]
+pub enum AttemptError {
+    #[error(transparent)]
+    Init(#[from] InitDeviceError),
+
+    #[error(transparent)]
+    Pipeline(#[from] PipelineError),
+
+    #[error("Audio send error")]
+    AudioSendError,
+
+    #[error("Stream error")]
+    StreamError,
+
+    #[error(transparent)]
+    State(#[from] SessionStateError),
+
+    #[error(transparent)]
+    AudioDevice(#[from] AudioDeviceError),
+
+    #[error("Unknown error")]
+    Unknown,
+}
+
+#[derive(Debug)]
+pub enum AttemptResult {
+    ExitOk,
+    ExitError(AttemptError),
+    Retry(AttemptError),
+}
+
+impl From<Result<(), AttemptError>> for AttemptResult {
+    fn from(result: Result<(), AttemptError>) -> Self {
+        use AttemptError::*;
+
+        match result {
+            Ok(()) => Self::ExitOk,
+
+            Err(
+                e @ (Init(_) | Pipeline(_) | AudioSendError | StreamError
+                | AudioDevice(_)),
+            ) => Self::Retry(e),
+
+            Err(e @ (State(_) | Unknown)) => Self::ExitError(e),
+        }
+    }
+}
+
 pub struct SessionHandle {
     shutdown_handle: SyncSender<Message>,
     device_handle: JoinHandle<Result<(), RetryStopped>>,
@@ -139,38 +194,38 @@ pub struct Session<T: AudioConsumer + Send> {
     state: SessionState<T>,
 }
 
-#[instrument(level = "debug", name = "audio_session:start", skip_all)]
-pub(crate) fn start<T>(config: SessionConfig, sink: T) -> SessionHandle
-where
-    T: AudioConsumer + Send + 'static,
-{
-    let (tx, rx) = mpsc::sync_channel::<Message>(10);
-
-    let session = Session {
-        config,
-        lifecycle_tx: tx.clone(),
-        lifecycle_rx: rx,
-        state: SessionState::NotInit { sink },
-    };
-
-    let handle = spawn(move || {
-        debug!("Starting audio session...");
-        let mut audio_session = session;
-
-        let res = retry_loop(
-            &mut audio_session,
-            |audio_session| audio_session.run().into(),
-            |audio_session| audio_session.wait(),
-        );
-
-        debug!("Audio session stopped.");
-        res
-    });
-
-    SessionHandle { shutdown_handle: tx, device_handle: handle }
-}
-
 impl<T: AudioConsumer + Send + 'static> Session<T> {
+    #[instrument(level = "debug", name = "audio_session:start", skip_all)]
+    pub(crate) fn start(config: SessionConfig, sink: T) -> SessionHandle
+    where
+        T: AudioConsumer + Send + 'static,
+    {
+        let (tx, rx) = mpsc::sync_channel::<Message>(10);
+
+        let session = Session {
+            config,
+            lifecycle_tx: tx.clone(),
+            lifecycle_rx: rx,
+            state: SessionState::NotInit { sink },
+        };
+
+        let handle = spawn(move || {
+            debug!("Starting audio session...");
+            let mut audio_session = session;
+
+            let res = retry_loop(
+                &mut audio_session,
+                |audio_session| audio_session.run().into(),
+                |audio_session| audio_session.wait(),
+            );
+
+            debug!("Audio session stopped.");
+            res
+        });
+
+        SessionHandle { shutdown_handle: tx, device_handle: handle }
+    }
+
     fn wait(&mut self) -> Result<(), RetryStopped> {
         match self
             .lifecycle_rx
@@ -217,7 +272,7 @@ impl<T: AudioConsumer + Send + 'static> Session<T> {
             })?;
 
         let notifier = self.lifecycle_tx.clone();
-        let stream = device.stream_with_error(
+        let mut stream = device.stream_with_error(
             move |samples: &[f32]| -> Result<(), AttemptError> {
                 audio_send
                     .try_send(samples.to_vec())
@@ -228,11 +283,39 @@ impl<T: AudioConsumer + Send + 'static> Session<T> {
             move |_| {
                 _ = notifier.send(Message::Error);
             },
-        );
+        )?;
 
         self.state.initted()?;
 
-        let msg_res = self.lifecycle_rx.recv();
+        let mut exit_err: Option<AttemptError> = None;
+
+        while let Ok(msg) = self.lifecycle_rx.recv() {
+            match msg {
+                Message::Play => {
+                    debug!("playing stream.");
+                    if let Err(err) = stream.play() {
+                        exit_err = Some(AttemptError::AudioDevice(err));
+                        break;
+                    }
+                }
+                Message::Pause => {
+                    debug!("pausing stream.");
+                    if let Err(err) = stream.pause() {
+                        exit_err = Some(AttemptError::AudioDevice(err));
+                        break;
+                    }
+                }
+                Message::Shutdown => {
+                    debug!("shutting down...");
+                    break;
+                }
+                Message::Error => {
+                    debug!("stream error");
+                    exit_err = Some(AttemptError::StreamError);
+                    break;
+                }
+            }
+        }
 
         debug!("Stopping the stream");
         drop(stream);
@@ -242,19 +325,8 @@ impl<T: AudioConsumer + Send + 'static> Session<T> {
 
         self.state.deinit(pipeline.sink())?;
 
-        let Ok(msg) = msg_res else {
-            debug!("lifecycle channel closed");
-            return Ok(());
-        };
-
-        match msg {
-            Message::Shutdown => {
-                debug!("shutting down...")
-            }
-            Message::Error => {
-                debug!("stream error");
-                return Err(AttemptError::StreamError);
-            }
+        if let Some(err) = exit_err {
+            return Err(err);
         }
 
         Ok(())
@@ -313,58 +385,6 @@ fn init_pipeline(
                 audio_config.model_config.sample_rate,
             )
         })
-}
-
-#[derive(Debug)]
-pub enum RetryStopped {
-    Shutdown,
-    Disconnected,
-    AttemptError,
-    UnexpectedMessage,
-}
-
-#[derive(Debug, Error)]
-pub enum AttemptError {
-    #[error(transparent)]
-    Init(#[from] InitDeviceError),
-
-    #[error(transparent)]
-    Pipeline(#[from] PipelineError),
-
-    #[error("Audio send error")]
-    AudioSendError,
-
-    #[error("Stream error")]
-    StreamError,
-
-    #[error(transparent)]
-    State(#[from] SessionStateError),
-
-    #[error("Unknown error")]
-    Unknown,
-}
-
-#[derive(Debug)]
-pub enum AttemptResult {
-    ExitOk,
-    ExitError(AttemptError),
-    Retry(AttemptError),
-}
-
-impl From<Result<(), AttemptError>> for AttemptResult {
-    fn from(result: Result<(), AttemptError>) -> Self {
-        use AttemptError::*;
-
-        match result {
-            Ok(()) => Self::ExitOk,
-
-            Err(
-                e @ (Init(_) | Pipeline(_) | AudioSendError | StreamError),
-            ) => Self::Retry(e),
-
-            Err(e @ (State(_) | Unknown)) => Self::ExitError(e),
-        }
-    }
 }
 
 #[instrument(level = "debug", name = "retry_loop", skip_all)]

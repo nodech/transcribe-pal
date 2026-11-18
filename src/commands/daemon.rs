@@ -152,8 +152,8 @@ pub(crate) fn run(
         if e.kind() == io::ErrorKind::NotFound { Ok(()) } else { Err(e) }
     })?;
 
-    let session_handle = audio::session::start(device_config, transcriber);
-    let server_handle = server::start(sock_file);
+    let session_handle = audio::Session::start(device_config, transcriber);
+    let server_handle = server::APIServer::start(sock_file);
 
     {
         let mut shutdown = ShutdownAllController::default();
