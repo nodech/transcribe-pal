@@ -16,6 +16,7 @@ use anyhow::Result;
 use thiserror::Error;
 use tracing::{debug, instrument};
 
+use crate::audio::session::SessionAPI;
 use crate::shutdown::AtomicShutdown;
 
 const ATOMIC_ORDERING: atomic::Ordering = SeqCst;
@@ -61,11 +62,15 @@ pub(super) struct APIServer {
     shutdown_flag: Arc<AtomicBool>,
     connection_id: ConnectionId,
     connections: BTreeMap<ConnectionId, ConnectionHandle>,
+    session_api: SessionAPI,
 }
 
 impl APIServer {
     #[instrument(level = "debug", name = "api-server:start", skip_all)]
-    pub fn start(sock_path: PathBuf) -> APIServerHandle {
+    pub fn start(
+        sock_path: PathBuf,
+        session_api: SessionAPI,
+    ) -> APIServerHandle {
         let shutdown_flag = Arc::new(AtomicBool::new(false));
         let socket_path: Arc<Path> = sock_path.into();
 
@@ -74,6 +79,7 @@ impl APIServer {
             connection_id: 0,
             connections: BTreeMap::new(),
             shutdown_flag: shutdown_flag.clone(),
+            session_api,
         };
 
         let handle = thread::spawn(move || {
@@ -109,7 +115,11 @@ impl APIServer {
                 break;
             }
 
-            match Connection::init(stream, self.connection_id) {
+            match Connection::init(
+                stream,
+                self.connection_id,
+                self.session_api.clone(),
+            ) {
                 Ok(handle) => {
                     debug!("Accepted connection");
                     self.connections.insert(self.connection_id, handle);
@@ -208,6 +218,7 @@ struct Connection {
     max_line_len: usize,
     stream_read: BufReader<UnixStream>,
     _stream_write: Arc<Mutex<UnixStream>>,
+    session_api: SessionAPI,
 }
 
 impl Connection {
@@ -215,6 +226,7 @@ impl Connection {
     fn init(
         stream: UnixStream,
         id: ConnectionId,
+        session_api: SessionAPI,
     ) -> Result<ConnectionHandle, ConnectionError> {
         let stream_shutdown =
             stream.try_clone().map_err(ConnectionError::StreamClone)?;
@@ -230,6 +242,7 @@ impl Connection {
             stream_read,
             _stream_write: stream_write.clone(),
             id,
+            session_api,
         };
 
         let handle = thread::spawn(move || connection.run());
@@ -253,7 +266,15 @@ impl Connection {
                 break;
             }
 
-            // TODO: Process the command
+            let lower = line_buffer.trim().to_lowercase();
+
+            if lower == "pause" {
+                _ = self.session_api.pause();
+            }
+
+            if lower == "play" {
+                _ = self.session_api.play();
+            }
 
             take_stream = (&mut self.stream_read).take(max_read as u64);
             line_buffer.clear();

@@ -1,11 +1,13 @@
 use std::fmt::Debug;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
+use std::sync::mpsc::{
+    self, Receiver, RecvTimeoutError, SyncSender, TrySendError,
+};
 use std::thread::{self, JoinHandle, spawn};
 use std::time::Duration;
 
 use anyhow::Result;
 use thiserror::Error;
-use tracing::{debug, instrument};
+use tracing::{debug, error, instrument};
 
 use crate::shutdown::AtomicShutdown;
 
@@ -45,7 +47,7 @@ pub struct SessionConfig {
 }
 
 #[derive(Debug, PartialEq)]
-enum Message {
+pub enum Message {
     Play,
     Pause,
     Shutdown,
@@ -163,13 +165,17 @@ impl From<Result<(), AttemptError>> for AttemptResult {
 }
 
 pub struct SessionHandle {
-    shutdown_handle: SyncSender<Message>,
+    lifecycle_tx: SyncSender<Message>,
     device_handle: JoinHandle<Result<(), RetryStopped>>,
 }
 
 impl SessionHandle {
     pub fn join(self) -> thread::Result<Result<(), RetryStopped>> {
         self.device_handle.join()
+    }
+
+    pub fn api(&self) -> SessionAPI {
+        SessionAPI { sender: self.lifecycle_tx.clone() }
     }
 }
 
@@ -179,9 +185,30 @@ impl AtomicShutdown for SessionHandle {
     }
 
     fn request_shutdown(&self) {
-        if let Err(e) = self.shutdown_handle.send(Message::Shutdown) {
+        if let Err(e) = self.lifecycle_tx.send(Message::Shutdown) {
             println!("Failed to shutdown: {e}.");
         }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum SessionAPIError {
+    #[error("Failed to submit command")]
+    Send(#[from] TrySendError<Message>),
+}
+
+#[derive(Clone)]
+pub struct SessionAPI {
+    sender: SyncSender<Message>,
+}
+
+impl SessionAPI {
+    pub fn play(&self) -> Result<(), SessionAPIError> {
+        self.sender.try_send(Message::Play).map_err(Into::into)
+    }
+
+    pub fn pause(&self) -> Result<(), SessionAPIError> {
+        self.sender.try_send(Message::Pause).map_err(Into::into)
     }
 }
 
@@ -223,7 +250,7 @@ impl<T: AudioConsumer + Send + 'static> Session<T> {
             res
         });
 
-        SessionHandle { shutdown_handle: tx, device_handle: handle }
+        SessionHandle { lifecycle_tx: tx, device_handle: handle }
     }
 
     fn wait(&mut self) -> Result<(), RetryStopped> {
@@ -280,7 +307,8 @@ impl<T: AudioConsumer + Send + 'static> Session<T> {
 
                 Ok(())
             },
-            move |_| {
+            move |e| {
+                error!("Stream error: {}", e);
                 _ = notifier.send(Message::Error);
             },
         )?;
@@ -302,6 +330,7 @@ impl<T: AudioConsumer + Send + 'static> Session<T> {
                     debug!("pausing stream.");
                     if let Err(err) = stream.pause() {
                         exit_err = Some(AttemptError::AudioDevice(err));
+                        println!("ERR: {:?}", exit_err);
                         break;
                     }
                 }
