@@ -1,6 +1,6 @@
 mod common;
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "daemon"))]
 pub(crate) mod daemon;
 
 pub(crate) mod enumerate;

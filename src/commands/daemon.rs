@@ -1,4 +1,4 @@
-#![cfg(unix)]
+#![cfg(all(unix, feature = "daemon"))]
 
 use std::path::PathBuf;
 use std::time::Duration;
