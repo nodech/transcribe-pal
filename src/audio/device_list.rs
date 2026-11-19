@@ -40,7 +40,7 @@ pub enum HostListDevicesError {
     #[error("No host")]
     NoHost,
     #[error("Failed to get input devices: {0}")]
-    DevicesError(#[from] cpal::DevicesError),
+    DevicesError(#[from] cpal::Error),
 }
 
 impl ListedHost {
@@ -170,7 +170,7 @@ pub enum DeviceConfigListError {
     #[error("No device")]
     NoDevice,
     #[error("Supported device config error: {0}")]
-    SupportedDeviceConfigError(#[from] cpal::SupportedStreamConfigsError),
+    SupportedDeviceConfigError(#[from] cpal::Error),
 }
 
 pub struct ListedDevice {

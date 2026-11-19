@@ -3,8 +3,7 @@ use std::{str::FromStr, time::Duration};
 
 use anyhow::Result;
 use cpal::{
-    DefaultStreamConfigError, Device, DeviceId, DeviceIdError, Host, HostId,
-    InputCallbackInfo, Stream, SupportedStreamConfigsError, host_from_id,
+    Device, DeviceId, Host, HostId, InputCallbackInfo, Stream, host_from_id,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use thiserror::Error;
@@ -18,13 +17,13 @@ use crate::audio::{
 #[derive(Debug, Error)]
 pub enum AudioDeviceError {
     #[error("Failed to build stream {0}")]
-    Build(#[from] cpal::BuildStreamError),
+    Build(cpal::Error),
 
     #[error("Play error {0}")]
-    Play(#[from] cpal::PlayStreamError),
+    Play(cpal::Error),
 
     #[error("Pause error {0}")]
-    Pause(#[from] cpal::PauseStreamError),
+    Pause(cpal::Error),
 }
 
 pub struct AudioStream {
@@ -33,19 +32,19 @@ pub struct AudioStream {
 
 impl AudioStream {
     pub fn play(&mut self) -> Result<(), AudioDeviceError> {
-        self.inner.play().map_err(Into::into)
+        self.inner.play().map_err(AudioDeviceError::Play)
     }
 
     #[allow(dead_code)]
     pub fn pause(&mut self) -> Result<(), AudioDeviceError> {
-        self.inner.pause().map_err(Into::into)
+        self.inner.pause().map_err(AudioDeviceError::Pause)
     }
 }
 
 #[derive(Debug, Error)]
 pub enum AudioStreamError {
     #[error(transparent)]
-    StreamError(#[from] cpal::StreamError),
+    Stream(#[from] cpal::Error),
 }
 
 pub trait AudioDeviceErrorCallback: Send + 'static {
@@ -115,26 +114,29 @@ impl AudioDevice {
         );
 
         let channels = self.config.channels;
-        let stream = self.device.build_input_stream(
-            &self.config.into(),
-            move |data: &[f32], _: &InputCallbackInfo| {
-                let _guard = cb_span.enter();
-                trace!(
-                    len = data.len(),
-                    channels = channels,
-                    "received audio data"
-                );
+        let stream = self
+            .device
+            .build_input_stream(
+                self.config.into(),
+                move |data: &[f32], _: &InputCallbackInfo| {
+                    let _guard = cb_span.enter();
+                    trace!(
+                        len = data.len(),
+                        channels = channels,
+                        "received audio data"
+                    );
 
-                if let Err(e) = cb.try_push_chunk(data) {
-                    error!(error = %e, "failed to process audio data");
-                }
-            },
-            move |err| {
-                error!(error = %err, "audio stream error");
-                err_cb.error(err.into());
-            },
-            self.timeout,
-        )?;
+                    if let Err(e) = cb.try_push_chunk(data) {
+                        error!(error = %e, "failed to process audio data");
+                    }
+                },
+                move |err| {
+                    error!(error = %err, "audio stream error");
+                    err_cb.error(err.into());
+                },
+                self.timeout,
+            )
+            .map_err(AudioDeviceError::Build)?;
 
         debug!("built audio stream");
 
@@ -154,17 +156,17 @@ pub enum AudioDeviceBuilderError {
     InvalidDeviceID {
         device: String,
         #[source]
-        source: DeviceIdError,
+        source: cpal::Error,
     },
 
     #[error("No device {device} for host {host}")]
     NoDeviceForHost { host: String, device: String },
 
     #[error("Supported config error: {0}")]
-    SupportedConfigError(#[from] SupportedStreamConfigsError),
+    SupportedConfigError(cpal::Error),
 
     #[error("Default config error: {0}")]
-    DefaultConfigError(#[from] DefaultStreamConfigError),
+    DefaultConfigError(cpal::Error),
 
     #[error(transparent)]
     UnsupportedFormat(#[from] SampleFormatError),
@@ -275,7 +277,10 @@ impl AudioDeviceBuilder {
         device: &Device,
         // buffer_size: usize,
     ) -> Result<DeviceConfig, AudioDeviceBuilderError> {
-        let mut configs = device.supported_input_configs()?;
+        let mut configs = device
+            .supported_input_configs()
+            .map_err(AudioDeviceBuilderError::SupportedConfigError)?;
+
         let buffer_size = self.buffer_size.unwrap_or(2048) as RawBufferSize;
 
         if let Some(cfg) =
@@ -288,7 +293,10 @@ impl AudioDeviceBuilder {
             return Ok(device_config);
         }
 
-        let default = device.default_input_config()?;
+        let default = device
+            .default_input_config()
+            .map_err(AudioDeviceBuilderError::DefaultConfigError)?;
+
         // This line also ensures format is supported.
         // TODO: Maybe try finding next best thing here if this fails?
         let device_config =
