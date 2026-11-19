@@ -7,7 +7,7 @@ repository = "https://github.com/nodech/transcribe-pal"
 license = "MIT"
 
 [features]
-linux-defaults=["wayland"]
+linux-defaults=["wayland", "daemon"]
 wayland = []
 daemon=[]
 jack=["cpal/jack"]

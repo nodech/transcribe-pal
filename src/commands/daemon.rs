@@ -128,11 +128,7 @@ pub(crate) fn run(
             preferred_host: host,
             preferred_device: device,
             buffer_size: Some(2048),
-
-            // TODO: Check if cpal 0.18 fixes the timeout issue
-            // on paused timeout was erroring.
-            // timeout: Some(Duration::from_secs(1)),
-            timeout: None,
+            timeout: Some(Duration::from_secs(1)),
 
             model_config,
         },
@@ -157,8 +153,11 @@ pub(crate) fn run(
     })?;
 
     let session_handle = audio::Session::start(device_config, transcriber);
-    let server_handle =
-        server::APIServer::start(sock_file, session_handle.api());
+    let session_api = session_handle.api();
+
+    session_api.play()?;
+
+    let server_handle = server::APIServer::start(sock_file, session_api);
 
     {
         let mut shutdown = ShutdownAllController::default();
